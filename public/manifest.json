@@ -1,0 +1,41 @@
+{
+  "id": "/",
+  "name": "Meal Direct",
+  "short_name": "Meal Direct",
+  "description": "Premium food delivery for Venite University",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f5132",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "widgets": [
+    {
+      "name": "Quick Order Status",
+      "description": "Check your active delivery status directly from the home screen",
+      "tag": "meal-direct-status",
+      "ms_ac_template": "/widgets/template.json",
+      "data": "/widgets/data.json",
+      "type": "application/json"
+    }
+  ]
+}
