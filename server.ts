@@ -78,6 +78,12 @@ function isMutating(req: Request) {
 
 function requireCsrf(req: Request, res: Response) {
   if (!isMutating(req)) return true;
+  // Bearer-authenticated requests carry the token in a header the browser never
+  // attaches automatically, so they are not forgeable cross-site → no CSRF needed.
+  if (req.header('authorization')) return true;
+  // Pre-session auth endpoints (login/signup/refresh/logout) have no CSRF cookie
+  // yet; they are protected by credentials, not by CSRF.
+  if (req.originalUrl.startsWith('/api/v1/auth/')) return true;
   const cookies = parseCookies(req.headers.cookie);
   const cookieToken = cookies[CSRF_COOKIE];
   const headerToken = req.header('x-mealdirect-csrf');

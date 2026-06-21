@@ -22,6 +22,8 @@ import {
 import { triggerVibration, VIBE_PATTERNS } from './utils/vibe';
 import { setMonitoringUser } from './utils/monitoring';
 
+// Must match the BFF mount in server.ts (app.use('/api/v1', ...)). A bare '/v1'
+// default hits no Express route → Vite returns 404 on every call.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const AUTH_BASE = '/api/auth';
 const CSRF_COOKIE = 'md_csrf';
