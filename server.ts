@@ -7,7 +7,9 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
+// NOTE: `vite` is imported lazily inside startServer (dev only). A top-level
+// import would pull the dev-only `vite` package into the Vercel serverless
+// function bundle and break/oversize the build.
 
 dotenv.config();
 
@@ -359,6 +361,7 @@ export async function startServer() {
   const app = createApp({ isProd: IS_PROD });
 
   if (!IS_PROD) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa'
