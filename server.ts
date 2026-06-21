@@ -209,7 +209,11 @@ export function createApp(options: CreateAppOptions = {}) {
     windowMs: 60 * 1000,
     max: 60,
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    // Disable dev-only sanity checks. Behind Vercel's proxy, `trust proxy` is
+    // permissive (1), which makes express-rate-limit v8 THROW a
+    // ValidationError on first request → FUNCTION_INVOCATION_FAILED (500).
+    validate: false
   });
   app.use('/api', apiLimiter);
 
