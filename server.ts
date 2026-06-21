@@ -379,6 +379,8 @@ export async function startServer() {
   });
 }
 
-if (process.env.NODE_ENV !== 'test') {
+// Local dev/Node-host only. On Vercel (serverless) the app is exported via
+// api/[...slug].ts and must NOT call app.listen.
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   startServer();
 }
