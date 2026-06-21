@@ -8,6 +8,7 @@ import { Bell, Check, MapPin, ChevronRight, CheckCircle2, ShieldAlert } from 'lu
 export const NotificationsView: React.FC = () => {
   const { notifications, markNotificationRead, markAllNotificationsRead, navigateTo } = useMealDirect();
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -16,12 +17,22 @@ export const NotificationsView: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  const handleClearAll = () => {
-    markAllNotificationsRead();
+  const handleClearAll = async () => {
+    setErrorMessage(null);
+    try {
+      await markAllNotificationsRead();
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Could not mark notifications as read.');
+    }
   };
 
-  const handleClickItem = (n: any) => {
-    markNotificationRead(n.id);
+  const handleClickItem = async (n: any) => {
+    setErrorMessage(null);
+    try {
+      await markNotificationRead(n.id);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Could not update this notification.');
+    }
     if (n.orderId) {
       navigateTo(`/orders/${n.orderId}`);
     } else {
@@ -62,6 +73,12 @@ export const NotificationsView: React.FC = () => {
           )}
         </div>
       </section>
+
+      {errorMessage && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-xs text-danger font-semibold rounded-xl">
+          {errorMessage}
+        </div>
+      )}
 
       <section className="space-y-3" id="notifications_list_stage">
         {isLoading ? (

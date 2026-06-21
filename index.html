@@ -36,7 +36,7 @@
     <meta name="application-name" content="Meal Direct" />
 
     <!-- Structured data -->
-    <script type="application/ld+json">
+    <script type="application/ld+json" nonce="%CSP_NONCE%">
       {
         "@context": "https://schema.org",
         "@type": "WebApplication",
@@ -63,15 +63,5 @@
   <body class="antialiased bg-sand-light selection:bg-mango-warm/30">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(err => {
-            console.log('Service Worker registration failed:', err);
-          });
-        });
-      }
-    </script>
   </body>
 </html>
-

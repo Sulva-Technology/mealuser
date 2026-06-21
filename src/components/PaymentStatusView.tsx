@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useMealDirect } from '../store';
+import { derivePaymentPollingState, useMealDirect } from '../store';
 import { AppShell, GlassPanel, Currency } from './CommonUI';
 import { CheckCircle2, XCircle, Loader2, AlertTriangle, ArrowRight, HelpCircle } from 'lucide-react';
 
@@ -9,7 +9,7 @@ interface PaymentStatusProps {
 
 export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => {
   const { orders, navigateTo, fetchPaymentStatus, refreshOrder } = useMealDirect();
-  const [loadingState, setLoadingState] = useState<'polling' | 'success' | 'cancelled' | 'not_found'>('polling');
+  const [loadingState, setLoadingState] = useState<'polling' | 'success' | 'cancelled' | 'not_found' | 'pending_verification'>('polling');
 
   // Parse custom parameters (Paystack callback may signal explicit cancel)
   const hashStr = window.location.hash || '';
@@ -36,23 +36,26 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
 
       if (cancelled) return;
 
-      if (status === null) {
-        // Could be a transient network error or unknown order; keep trying a few times
-        if (attempts >= MAX_ATTEMPTS) {
-          setLoadingState(orders.some(o => o.id === orderId) ? 'cancelled' : 'not_found');
-          return;
-        }
-      } else if (status.paid) {
+      if (status?.paid) {
         await refreshOrder(orderId);
         if (!cancelled) setLoadingState('success');
         return;
-      } else if (status.terminalFail) {
-        if (!cancelled) setLoadingState('cancelled');
+      }
+
+      const nextState = derivePaymentPollingState({
+        paymentStatus: status,
+        hasKnownOrder: orders.some(o => o.id === orderId),
+        attemptsExhausted: attempts >= MAX_ATTEMPTS,
+        explicitCancel: false
+      });
+
+      if (nextState !== 'polling') {
+        if (!cancelled) setLoadingState(nextState);
         return;
       }
 
       if (attempts >= MAX_ATTEMPTS) {
-        if (!cancelled) setLoadingState('cancelled');
+        if (!cancelled) setLoadingState('pending_verification');
         return;
       }
 
@@ -168,6 +171,27 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
                 className="mt-4 w-full py-3 bg-emerald-deep hover:bg-emerald-strong text-white font-bold text-xs rounded-xl cursor-pointer"
               >
                 Return to Dashboard
+              </button>
+            </div>
+          )}
+
+          {loadingState === 'pending_verification' && (
+            <div className="flex flex-col items-center gap-4" id="payment_pending_verification_state">
+              <div className="w-12 h-12 rounded-full bg-amber-50 text-warning flex items-center justify-center">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-base text-warning">Payment Still Verifying</h3>
+                <p className="text-xs text-muted-grey mt-1 max-w-xs mx-auto">
+                  The payment window is closed, but the bank webhook has not finalized this order yet. You can safely check the order again from your timeline.
+                </p>
+              </div>
+
+              <button
+                onClick={handleContinueTrack}
+                className="mt-4 w-full py-3 bg-emerald-deep hover:bg-emerald-strong text-white font-bold text-xs rounded-xl cursor-pointer"
+              >
+                View Order Timeline
               </button>
             </div>
           )}

@@ -20,38 +20,18 @@ import {
   ServerQuote
 } from './types';
 import { triggerVibration, VIBE_PATTERNS } from './utils/vibe';
+import { setMonitoringUser } from './utils/monitoring';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const AUTH_BASE = '/api/auth';
+const CSRF_COOKIE = 'md_csrf';
 
-// Single-flight refresh: many parallel 401s share one /auth/refresh call
-let refreshPromise: Promise<string | null> | null = null;
-
-async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = localStorage.getItem('md_refresh_token');
-  if (!refreshToken) return null;
-  if (!refreshPromise) {
-    refreshPromise = (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken })
-        });
-        if (!res.ok) return null;
-        const json = await res.json();
-        const newAccess = json.accessToken;
-        if (!newAccess) return null;
-        localStorage.setItem('md_access_token', newAccess);
-        localStorage.setItem('md_refresh_token', json.refreshToken || refreshToken);
-        return newAccess as string;
-      } catch {
-        return null;
-      } finally {
-        refreshPromise = null;
-      }
-    })();
-  }
-  return refreshPromise;
+function readCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie
+    .split('; ')
+    .find(part => part.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.split('=').slice(1).join('=')) : null;
 }
 
 // Convert a base64url VAPID public key into the Uint8Array PushManager expects
@@ -79,21 +59,42 @@ function unwrapEnvelope(json: any) {
   return json;
 }
 
-export async function apiRequest(path: string, method = 'GET', body: any = null, token?: string | null, extraHeaders?: Record<string, string>, _isRetry = false): Promise<any> {
+function csrfHeaders(method: string) {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())) return {};
+  const csrf = readCookie(CSRF_COOKIE);
+  return csrf ? { 'X-MealDirect-CSRF': csrf } : {};
+}
+
+async function authRequest(path: string, method = 'POST', body: any = null): Promise<any> {
+  const response = await fetch(`${AUTH_BASE}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    credentials: 'same-origin',
+    body: body ? JSON.stringify(body) : null
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData?.error?.message || errorData?.message || `HTTP ${response.status}`);
+  }
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+export async function apiRequest(path: string, method = 'GET', body: any = null, _token?: string | null, extraHeaders?: Record<string, string>): Promise<any> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...csrfHeaders(method),
     ...(extraHeaders || {})
   };
-  const activeToken = token || localStorage.getItem('md_access_token');
-  if (activeToken) {
-    headers['Authorization'] = `Bearer ${activeToken}`;
-  }
 
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
       method,
       headers,
+      credentials: 'same-origin',
       body: body ? JSON.stringify(body) : null
     });
   } catch (error) {
@@ -101,19 +102,7 @@ export async function apiRequest(path: string, method = 'GET', body: any = null,
     throw error;
   }
 
-  // Access token expired — attempt a one-time refresh, then retry once.
-  // Skip auth endpoints (login/signup/refresh): their 401 is a real credential
-  // error, not an expired session. Only engage if we actually hold a refresh token.
-  const isAuthPath = path.startsWith('/auth/');
-  const hasRefreshToken = !!localStorage.getItem('md_refresh_token');
-  if (response.status === 401 && !_isRetry && !token && !isAuthPath && hasRefreshToken) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      return apiRequest(path, method, body, newToken, extraHeaders, true);
-    }
-    // Refresh failed → force a clean logout
-    localStorage.removeItem('md_access_token');
-    localStorage.removeItem('md_refresh_token');
+  if (response.status === 401) {
     window.dispatchEvent(new CustomEvent('md:logout'));
     throw new Error('Session expired. Please sign in again.');
   }
@@ -139,8 +128,8 @@ interface MealDirectContextType {
   onboardingData: { phone: string; campusId: string; locationId: string } | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
-  completeOnboarding: (fullName: string, phone: string, campusId: string, locationId: string) => void;
-  updateProfile: (fullName: string, phone: string, campusId: string, defaultLocationId: string) => void;
+  completeOnboarding: (fullName: string, phone: string, campusId: string, locationId: string) => Promise<void>;
+  updateProfile: (fullName: string, phone: string, campusId: string, defaultLocationId: string) => Promise<void>;
   signOut: () => void;
 
   // Catalog
@@ -171,28 +160,29 @@ interface MealDirectContextType {
   orders: Order[];
   createOrder: (specialInstructions?: string, promotionCode?: string) => Promise<Order>;
   registerDeviceToken: () => Promise<boolean>;
+  unregisterDeviceToken: () => Promise<boolean>;
   payOrder: (orderId: string) => Promise<string>;
   refreshOrder: (orderId: string) => Promise<Order | null>;
   fetchPaymentStatus: (orderId: string) => Promise<{ orderStatus: OrderStatus; paid: boolean; terminalFail: boolean } | null>;
-  confirmDelivery: (orderId: string) => void;
+  confirmDelivery: (orderId: string) => Promise<void>;
   progressOrderStatus: (orderId: string) => void; // Simulated status incrementer for demo!
   cancelOrder: (orderId: string) => void;
   reorderOrder: (orderId: string) => void;
 
   // Escalations
   escalations: Escalation[];
-  createEscalation: (orderId: string, category: Escalation['category'], description: string) => void;
+  createEscalation: (orderId: string, category: Escalation['category'], description: string) => Promise<void>;
 
   // Reviews
   reviews: Review[];
-  createReview: (orderId: string, rating: number, comment: string) => void;
+  createReview: (orderId: string, rating: number, comment: string) => Promise<void>;
   menuItemReviews: MenuItemReview[];
   createMenuItemReview: (menuItemId: string, rating: number, comment: string, userName?: string) => void;
 
   // Notifications
   notifications: AppNotification[];
-  markNotificationRead: (id: string) => void;
-  markAllNotificationsRead: () => void;
+  markNotificationRead: (id: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
 
   // Connection & Offline simulated states
   isOnline: boolean;
@@ -246,6 +236,7 @@ function parseLocation(): RouterState {
 
 // localStorage key holding the route to return to after the user signs back in.
 const RETURN_PATH_KEY = 'md_return_path';
+const PENDING_CHECKOUT_KEY = 'md_pending_checkout';
 
 // Whether a path is safe to restore for ANY account after re-login.
 // Excludes auth/onboarding plus user-specific deep links (a specific order,
@@ -276,6 +267,71 @@ function saveReturnPath() {
 export function normalizeStatus(raw: string | undefined | null): OrderStatus {
   if (!raw) return 'PENDING_PAYMENT';
   return raw.toUpperCase() as OrderStatus;
+}
+
+export function mapMeSession(raw: any): UserProfile {
+  const session = raw?.profile || raw?.actor ? raw : { profile: raw, actor: raw };
+  const profile = session.profile || {};
+  const actor = session.actor || {};
+  const activeMembership = Array.isArray(session.campuses)
+    ? session.campuses.find((membership: any) => membership?.active) || session.campuses[0]
+    : undefined;
+
+  return {
+    id: profile.id || actor.id || raw?.id || '',
+    email: profile.email || actor.email || raw?.email || '',
+    fullName: profile.displayName || raw?.fullName || raw?.displayName || '',
+    phone: profile.phoneNumber || raw?.phone || raw?.phoneNumber || '',
+    campusId: profile.defaultCampusId || raw?.campusId || raw?.defaultCampusId || activeMembership?.campusId || '',
+    defaultLocationId: profile.defaultLocationId || raw?.defaultLocationId || '',
+    isOnboarded: Boolean(profile.onboardingCompleted ?? raw?.isOnboarded ?? raw?.onboardingCompleted)
+  };
+}
+
+export function mapNotification(raw: any): AppNotification {
+  const aggregateType = String(raw.aggregateType || '').toLowerCase();
+  const eventType = String(raw.eventType || '').toLowerCase();
+  const type: AppNotification['type'] =
+    aggregateType === 'order' || eventType.includes('order')
+      ? 'order_status'
+      : eventType.includes('escalation') || eventType.includes('support')
+        ? 'support_update'
+        : 'general';
+
+  return {
+    id: raw.id,
+    title: raw.title || 'Meal Direct',
+    message: raw.body || raw.message || '',
+    createdAt: raw.createdAt || new Date().toISOString(),
+    read: Boolean(raw.read || raw.readAt),
+    type,
+    orderId: aggregateType === 'order' ? raw.aggregateId : raw.orderId
+  };
+}
+
+export function mapPaymentStatus(data: any): { orderStatus: OrderStatus; paid: boolean; terminalFail: boolean } {
+  const orderStatus = normalizeStatus(data?.orderStatus);
+  const payStatus = (data?.payment?.status || '').toLowerCase();
+  const paid =
+    (orderStatus !== 'PENDING_PAYMENT' && orderStatus !== 'CANCELLED' && orderStatus !== 'EXPIRED') ||
+    payStatus === 'success' ||
+    payStatus === 'successful' ||
+    !!data?.payment?.paidAt;
+  const terminalFail = orderStatus === 'CANCELLED' || orderStatus === 'EXPIRED' || payStatus === 'failed';
+  return { orderStatus, paid, terminalFail };
+}
+
+export function derivePaymentPollingState(args: {
+  paymentStatus: { paid: boolean; terminalFail: boolean } | null;
+  hasKnownOrder: boolean;
+  attemptsExhausted: boolean;
+  explicitCancel: boolean;
+}): 'polling' | 'success' | 'cancelled' | 'not_found' | 'pending_verification' {
+  if (args.explicitCancel) return 'cancelled';
+  if (args.paymentStatus?.paid) return 'success';
+  if (args.paymentStatus?.terminalFail) return 'cancelled';
+  if (!args.attemptsExhausted) return 'polling';
+  return args.hasKnownOrder ? 'pending_verification' : 'not_found';
 }
 
 // Human-readable titles for synthesized status-history entries
@@ -425,9 +481,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [currentLocationId, setCurrentLocationId] = useState<string>('');
 
   // Persisted Database State
-  const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem('md_access_token');
-  });
+  const [token, setToken] = useState<string | null>(null);
 
   const [user, setUser] = useState<UserProfile | null>(() => {
     const saved = localStorage.getItem('md_user');
@@ -436,39 +490,28 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   });
 
   useEffect(() => {
-    if (token) {
-      localStorage.setItem('md_access_token', token);
-      
-      // Real auth protection: validate session on boot
-      apiRequest('/me', 'GET', null, token).then((meProfile) => {
-        if (meProfile) setUser(meProfile);
-      }).catch((err) => {
-        console.warn('Session invalid, logging out', err);
+    apiRequest('/me', 'GET')
+      .then((meProfile) => {
+        if (meProfile) {
+          setUser(mapMeSession(meProfile));
+          setToken('cookie-session');
+        }
+      })
+      .catch((err) => {
+        console.warn('No active cookie session:', err);
         setToken(null);
         setUser(null);
-        localStorage.removeItem('md_access_token');
         localStorage.removeItem('md_user');
       });
-      
-    } else {
-      localStorage.removeItem('md_access_token');
-    }
-  }, []); // Only run once on mount, or wait, if I run it on `token` change, it loops?
-  
-  // Safe token persistence
-  useEffect(() => {
-    if (token) {
-      localStorage.setItem('md_access_token', token);
-    } else {
-      localStorage.removeItem('md_access_token');
-    }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     if (user) {
       localStorage.setItem('md_user', JSON.stringify(user));
+      setMonitoringUser({ id: user.id, email: user.email });
     } else {
       localStorage.removeItem('md_user');
+      setMonitoringUser(null);
     }
   }, [user]);
 
@@ -539,20 +582,19 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     const pullServerSync = async () => {
       try {
-        const token = user.id;
-        const profile = await apiRequest('/me', 'GET', null, token);
+        const profile = await apiRequest('/me', 'GET');
         if (profile) {
-          setUser(prev => prev ? { ...prev, ...profile } : profile);
+          setUser(prev => prev ? { ...prev, ...mapMeSession(profile) } : mapMeSession(profile));
         }
 
-        const serverOrders = await apiRequest('/orders', 'GET', null, token);
+        const serverOrders = await apiRequest('/orders', 'GET');
         if (serverOrders && Array.isArray(serverOrders)) {
           setOrders(prev => mergeServerOrders(prev, serverOrders));
         }
 
-        const serverNotifs = await apiRequest('/notifications', 'GET', null, token);
+        const serverNotifs = await apiRequest('/notifications', 'GET');
         if (serverNotifs && Array.isArray(serverNotifs)) {
-          setNotifications(serverNotifs);
+          setNotifications(serverNotifs.map(mapNotification));
         }
       } catch (e) {
         console.warn('Silent live-reconciliation pull warning:', e);
@@ -656,8 +698,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (!token) return;
       // Campuses the user actually belongs to (avoids 403 "you do not belong to this campus")
       const [campList, memberships] = await Promise.all([
-        apiRequest('/campuses', 'GET', null, token).catch(() => []),
-        apiRequest('/me/campuses', 'GET', null, token).catch(() => [])
+        apiRequest('/campuses', 'GET').catch(() => []),
+        apiRequest('/me/campuses', 'GET').catch(() => [])
       ]);
       setCampuses(campList || []);
 
@@ -667,8 +709,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (cId) {
 
         const [slotsList, locs] = await Promise.all([
-          apiRequest(`/campuses/${cId}/delivery-slots`, 'GET', null, token).catch(() => []),
-          apiRequest(`/campuses/${cId}/locations`, 'GET', null, token)
+          apiRequest(`/campuses/${cId}/delivery-slots`, 'GET').catch(() => []),
+          apiRequest(`/campuses/${cId}/locations`, 'GET')
         ]);
         const mappedSlots = Array.isArray(slotsList) ? slotsList.map(mapSlot) : [];
         setDeliverySlots(mappedSlots);
@@ -679,14 +721,14 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           setCurrentSlotId(prev => (mappedSlots.some(s => s.id === prev) ? prev : mappedSlots[0].id));
         }
 
-        const vends = await apiRequest(`/catalog/vendors?campusId=${cId}`, 'GET', null, token);
+        const vends = await apiRequest(`/catalog/vendors?campusId=${cId}`, 'GET');
         const vendorList: Vendor[] = Array.isArray(vends) ? vends.map(mapVendor) : [];
         setVendors(vendorList);
 
         // Aggregate menus across vendors so cart/checkout pricing + validation resolve
         const menusNested = await Promise.all(
           vendorList.map(v =>
-            apiRequest(`/catalog/vendors/${v.id}/menu`, 'GET', null, token).catch(() => [])
+            apiRequest(`/catalog/vendors/${v.id}/menu`, 'GET').catch(() => [])
           )
         );
         const allItems = menusNested.flat().filter(Boolean).map(mapMenuItem);
@@ -707,7 +749,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         apiRequest('/notifications', 'GET')
       ]);
       if (Array.isArray(remoteOrders)) setOrders(prev => mergeServerOrders(prev, remoteOrders));
-      if (remoteNotifications) setNotifications(remoteNotifications);
+      if (Array.isArray(remoteNotifications)) setNotifications(remoteNotifications.map(mapNotification));
     } catch (err) {
       console.warn("Failed to load user resources remotely:", err);
     }
@@ -729,18 +771,15 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Auth Functions
   const signIn = async (email: string, password: string) => {
     try {
-      const data = await apiRequest('/auth/customer/login', 'POST', { email, password });
-      if (data && (data.accessToken || (data.session && data.session.access_token))) {
-        const tokenToUse = data.accessToken || data.session.access_token;
-        const refreshToUse = data.refreshToken || data.session?.refresh_token;
-        if (refreshToUse) localStorage.setItem('md_refresh_token', refreshToUse);
-        setToken(tokenToUse);
-        setUser(data.user);
+      const data = await authRequest('/customer/login', 'POST', { email, password });
+      if (data?.user) {
+        setToken('cookie-session');
+        setUser(mapMeSession(data.user));
         setLastSyncTime(new Date().toLocaleTimeString());
         
-        const meProfile = await apiRequest('/me', 'GET', null, tokenToUse).catch(() => data.user);
+        const meProfile = await apiRequest('/me', 'GET').catch(() => data.user);
         if (meProfile) {
-          setUser(meProfile);
+          setUser(mapMeSession(meProfile));
         }
 
         // Return to the page the user was on before logging out (if any & safe),
@@ -759,8 +798,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const signUp = async (email: string, password: string) => {
     try {
-      // POST /auth/customer/signup
-      await apiRequest('/auth/customer/signup', 'POST', { email, password });
+      await authRequest('/customer/signup', 'POST', { email, password });
       
       // Auto sign in when sign up completes
       await signIn(email, password);
@@ -772,71 +810,57 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
-  const completeOnboarding = (fullName: string, phone: string, campusId: string, locationId: string) => {
+  const completeOnboarding = async (fullName: string, phone: string, campusId: string, locationId: string) => {
     if (!user) return;
-    const updatedUser = {
-      ...user,
-      fullName,
-      phone,
-      campusId,
+
+    await apiRequest('/me/complete-onboarding', 'POST', {
+      defaultCampusId: campusId,
       defaultLocationId: locationId,
-      isOnboarded: true
-    };
+      phoneNumber: phone
+    });
+
+    if (fullName) {
+      await apiRequest('/me', 'PATCH', { displayName: fullName });
+    }
+
+    const session = await apiRequest('/me', 'GET').catch(() => null);
+    const updatedUser = session
+      ? mapMeSession(session)
+      : { ...user, fullName, phone, campusId, defaultLocationId: locationId, isOnboarded: true };
     setUser(updatedUser);
     setCurrentLocationId(locationId);
     navigateTo('/home');
 
-    // POST /v1/me/complete-onboarding to persist campus/location/phone
-    apiRequest('/me/complete-onboarding', 'POST', {
-      defaultCampusId: campusId,
-      defaultLocationId: locationId,
-      phoneNumber: phone
-    }).then(record => {
-      // Merge server record but keep the display name we just set
-      if (record) setUser(prev => ({ ...(record as any), fullName: fullName || (record as any).fullName || prev?.fullName }));
-    }).catch(console.error);
-
-    // Name is set via PATCH /me (complete-onboarding has no name field)
-    if (fullName) {
-      apiRequest('/me', 'PATCH', { displayName: fullName }).catch(console.error);
-    }
-
-    // Notification
     addNotification(
       'Onboarding Completed 🎓',
-      `Welcome onboard${user.fullName ? ', ' + user.fullName.split(' ')[0] : ''}. Your default delivery location has been validated for campus dispatch.`,
+      `Welcome onboard${fullName ? ', ' + fullName.split(' ')[0] : ''}. Your default delivery location has been validated for campus dispatch.`,
       'general'
     );
   };
 
-  const updateProfile = (fullName: string, phone: string, campusId: string, defaultLocationId: string) => {
+  const updateProfile = async (fullName: string, phone: string, campusId: string, defaultLocationId: string) => {
     if (!user) return;
-    const updated = {
+
+    await apiRequest('/me', 'PATCH', {
+      displayName: fullName,
+      phoneNumber: phone
+    });
+
+    await apiRequest('/me/default-location', 'PUT', {
+      campusId,
+      locationId: defaultLocationId
+    });
+
+    const session = await apiRequest('/me', 'GET').catch(() => null);
+    setUser(session ? mapMeSession(session) : {
       ...user,
       fullName,
       phone,
       campusId,
       defaultLocationId,
       isOnboarded: true
-    };
-    setUser(updated);
+    });
     setCurrentLocationId(defaultLocationId);
-
-    // PATCH /v1/me to persist properties
-    apiRequest('/me', 'PATCH', {
-      displayName: fullName,
-      phoneNumber: phone
-    }).then(record => {
-      if (record) {
-        setUser(record);
-      }
-    }).catch(console.error);
-
-    // Put default location
-    apiRequest('/me/default-location', 'PUT', {
-      campusId,
-      locationId: defaultLocationId
-    }).catch(console.error);
 
     addNotification('Profile Saved Successfully', 'Your contact phone number and preset dispatch terminal were updated.', 'general');
   };
@@ -846,7 +870,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     saveReturnPath();
 
     if (user?.id) {
-    apiRequest('/auth/logout', 'POST').catch(console.error);
+      authRequest('/logout', 'POST').catch(console.error);
     }
 
     localStorage.removeItem('md_orders');
@@ -856,8 +880,6 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     localStorage.removeItem('md_reviews');
     localStorage.removeItem('md_onboarding_temp');
     localStorage.removeItem('md_user');
-    localStorage.removeItem('md_access_token');
-    localStorage.removeItem('md_refresh_token');
 
     setUser(null);
     setToken(null);
@@ -875,8 +897,6 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       // Remember the current page so re-login returns the user here.
       saveReturnPath();
       localStorage.removeItem('md_user');
-      localStorage.removeItem('md_access_token');
-      localStorage.removeItem('md_refresh_token');
       setUser(null);
       setToken(null);
       setCart(null);
@@ -1102,7 +1122,6 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     const normalized = normalizeOrder(newOrder);
     setOrders(prev => [normalized, ...prev]);
-    setCart(null); // Clear active cart on check out
     triggerVibration(VIBE_PATTERNS.MEDIUM);
     return normalized;
   };
@@ -1125,6 +1144,16 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setOrders(prev =>
       prev.map(o => (o.id === orderId ? { ...o, paymentReference: initRes.reference } : o))
     );
+
+    if (cart) {
+      localStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify({
+        orderId,
+        cart,
+        authorizationUrl: url,
+        createdAt: new Date().toISOString()
+      }));
+      setCart(null);
+    }
 
     return url;
   };
@@ -1157,23 +1186,18 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       const data = await apiRequest(`/orders/${orderId}/payment-status`, 'GET');
       if (!data) return null;
-      const orderStatus = normalizeStatus(data.orderStatus);
-      const payStatus = (data.payment?.status || '').toLowerCase();
-      const paid =
-        (orderStatus !== 'PENDING_PAYMENT' && orderStatus !== 'CANCELLED' && orderStatus !== 'EXPIRED') ||
-        payStatus === 'success' ||
-        payStatus === 'successful' ||
-        !!data.payment?.paidAt;
-      const terminalFail = orderStatus === 'CANCELLED' || orderStatus === 'EXPIRED' || payStatus === 'failed';
-      return { orderStatus, paid, terminalFail };
+      return mapPaymentStatus(data);
     } catch (e) {
       console.warn('fetchPaymentStatus failed:', e);
       return null;
     }
   };
 
-  const confirmDelivery = (orderId: string) => {
+  const confirmDelivery = async (orderId: string) => {
     triggerVibration(VIBE_PATTERNS.SUCCESS);
+    await apiRequest(`/orders/${orderId}/confirm-delivery`, 'POST');
+    await refreshOrder(orderId);
+
     setOrders(prev =>
       prev.map(o => {
         if (o.id === orderId) {
@@ -1195,10 +1219,6 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return o;
       })
     );
-
-    apiRequest(`/orders/${orderId}/confirm-delivery`, 'POST')
-      .then(() => refreshOrder(orderId))
-      .catch(console.error);
 
     addNotification(
       'Order Confirmed 👍',
@@ -1269,19 +1289,23 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Escalation actions
-  const createEscalation = (
+  const createEscalation = async (
     orderId: string,
     category: Escalation['category'],
     description: string
   ) => {
-    const escId = 'esc_' + Math.floor(Math.random() * 1000000);
+    const created = await apiRequest(`/orders/${orderId}/escalations`, 'POST', {
+      category,
+      description
+    });
+    const escId = created?.id || 'esc_' + Math.floor(Math.random() * 1000000);
     const newEsc: Escalation = {
       id: escId,
       orderId,
       category,
       description,
-      status: 'PENDING',
-      createdAt: new Date().toISOString()
+      status: String(created?.status || '').toLowerCase() === 'resolved' ? 'RESOLVED' : 'PENDING',
+      createdAt: created?.createdAt || created?.openedAt || new Date().toISOString()
     };
 
     setEscalations(prev => [newEsc, ...prev]);
@@ -1310,13 +1334,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       })
     );
 
-    // REST call to create escalation on backend, then reconcile order state
-    apiRequest(`/orders/${orderId}/escalations`, 'POST', {
-      category,
-      description
-    })
-      .then(() => refreshOrder(orderId))
-      .catch(console.error);
+    await refreshOrder(orderId);
 
     addNotification(
       'Issue Reported ⚠️',
@@ -1327,7 +1345,12 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Review actions
-  const createReview = (orderId: string, rating: number, comment: string) => {
+  const createReview = async (orderId: string, rating: number, comment: string) => {
+    await apiRequest(`/orders/${orderId}/review`, 'POST', {
+      vendorRating: rating,
+      comment
+    });
+
     const newRev: Review = {
       orderId,
       rating,
@@ -1344,12 +1367,6 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return o;
       })
     );
-
-    // REST call to submit review
-    apiRequest(`/orders/${orderId}/review`, 'POST', {
-      vendorRating: rating,
-      comment
-    }).catch(console.error);
 
     addNotification('Review Logged ⭐', 'Thank you for grading the meal! Your feedback shapes launch vendor scorecards.', 'general', orderId);
   };
@@ -1388,15 +1405,34 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapid)
       });
+      const token = JSON.stringify(sub);
 
       await apiRequest('/me/device-tokens', 'POST', {
-        token: JSON.stringify(sub),
+        token,
         platform: 'web'
       });
+      localStorage.setItem('md_device_token', token);
       addNotification('Notifications Enabled 🔔', 'You will now get push alerts for order updates.', 'general');
       return true;
     } catch (e) {
       console.warn('Device token registration failed:', e);
+      return false;
+    }
+  };
+
+  const unregisterDeviceToken = async (): Promise<boolean> => {
+    try {
+      const token = localStorage.getItem('md_device_token');
+      if (!token) return false;
+      await apiRequest(`/me/device-tokens/${encodeURIComponent(token)}`, 'DELETE');
+      localStorage.removeItem('md_device_token');
+      const reg = await navigator.serviceWorker?.getRegistration?.();
+      const sub = await reg?.pushManager.getSubscription();
+      await sub?.unsubscribe();
+      addNotification('Notifications Disabled', 'Push alerts were disabled for this browser.', 'general');
+      return true;
+    } catch (e) {
+      console.warn('Device token removal failed:', e);
       return false;
     }
   };
@@ -1415,16 +1451,14 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setNotifications(prev => [noti, ...prev]);
   };
 
-  const markNotificationRead = (id: string) => {
+  const markNotificationRead = async (id: string) => {
+    await apiRequest(`/notifications/${id}/read`, 'POST');
     setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)));
-    // REST call to read single notification
-    apiRequest(`/notifications/${id}/read`, 'POST').catch(console.error);
   };
 
-  const markAllNotificationsRead = () => {
+  const markAllNotificationsRead = async () => {
+    await apiRequest('/notifications/read-all', 'POST');
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-    // REST call to read all notifications
-    apiRequest('/notifications/read-all', 'POST').catch(console.error);
   };
 
   // Toggle offline connection simulation
@@ -1473,6 +1507,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         orders,
         createOrder,
         registerDeviceToken,
+        unregisterDeviceToken,
         payOrder,
         refreshOrder,
         fetchPaymentStatus,

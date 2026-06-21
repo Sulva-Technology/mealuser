@@ -1,4 +1,5 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
+import { captureError } from '../utils/monitoring';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -19,8 +20,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // Hook point for an error reporter (e.g. Sentry) in production
     console.error('Unhandled UI error:', error, info);
+    captureError(error, { componentStack: info.componentStack });
   }
 
   handleReload = () => {

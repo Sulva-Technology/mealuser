@@ -4,21 +4,28 @@
  */
 
 import { AnimatePresence, motion } from "motion/react";
-import React from "react";
+import React, { Suspense } from "react";
 import { AuthView } from "./components/AuthView";
-import { CartView } from "./components/CartView";
 import { CheckoutView } from "./components/CheckoutView";
 import { HomeView } from "./components/HomeView";
-import { NotificationsView } from "./components/NotificationsView";
-import { OfflineView } from "./components/OfflineView";
-import { OnboardingView } from "./components/OnboardingView";
 import { OrderDetailView } from "./components/OrderDetailView";
 import { OrdersView } from "./components/OrdersView";
 import { PaymentStatusView } from "./components/PaymentStatusView";
-import { ProfileView } from "./components/ProfileView";
-import { VendorDetailView } from "./components/VendorDetailView";
-import { VendorsView } from "./components/VendorsView";
 import { MealDirectProvider, useMealDirect } from "./store";
+
+const CartView = React.lazy(() => import("./components/CartView").then(module => ({ default: module.CartView })));
+const NotificationsView = React.lazy(() => import("./components/NotificationsView").then(module => ({ default: module.NotificationsView })));
+const OfflineView = React.lazy(() => import("./components/OfflineView").then(module => ({ default: module.OfflineView })));
+const OnboardingView = React.lazy(() => import("./components/OnboardingView").then(module => ({ default: module.OnboardingView })));
+const ProfileView = React.lazy(() => import("./components/ProfileView").then(module => ({ default: module.ProfileView })));
+const VendorDetailView = React.lazy(() => import("./components/VendorDetailView").then(module => ({ default: module.VendorDetailView })));
+const VendorsView = React.lazy(() => import("./components/VendorsView").then(module => ({ default: module.VendorsView })));
+
+const RouteFallback = () => (
+	<div className="h-full w-full flex items-center justify-center p-8">
+		<div className="w-8 h-8 border-2 border-emerald-deep/20 border-t-emerald-deep rounded-full animate-spin" />
+	</div>
+);
 
 const RouteDispatcher: React.FC = () => {
 	const { router, user } = useMealDirect();
@@ -84,7 +91,9 @@ const RouteDispatcher: React.FC = () => {
 				transition={{ duration: 0.2, ease: "easeOut" }}
 				className="h-full w-full"
 			>
-				{renderRoute()}
+				<Suspense fallback={<RouteFallback />}>
+					{renderRoute()}
+				</Suspense>
 			</motion.div>
 		</AnimatePresence>
 	);

@@ -89,6 +89,7 @@ export const ProfileView: React.FC = () => {
 		navigateTo,
         signOut,
 		registerDeviceToken,
+		unregisterDeviceToken,
 		campuses: CAMPUSES,
 		locations: PRESET_LOCATIONS,
 		vendors: VENDORS
@@ -105,6 +106,11 @@ export const ProfileView: React.FC = () => {
 		setPushState('loading');
 		const ok = await registerDeviceToken();
 		setPushState(ok ? 'enabled' : 'unavailable');
+	};
+	const handleDisablePush = async () => {
+		setPushState('loading');
+		const ok = await unregisterDeviceToken();
+		setPushState(ok ? 'idle' : 'unavailable');
 	};
 
 	// Parse existing phone number or fallback to default Nigeria format
@@ -146,7 +152,7 @@ export const ProfileView: React.FC = () => {
 		(loc) => loc.zone === "Zone B" && loc.type === "Department",
 	);
 
-	const handleSaveProfile = (e: React.FormEvent) => {
+	const handleSaveProfile = async (e: React.FormEvent) => {
 		e.preventDefault();
 		setMsg(null);
 
@@ -181,19 +187,25 @@ export const ProfileView: React.FC = () => {
 				? localPhone.trim()
 				: `${selectedCountry.dialCode}${localPhone.trim().replace(/^0/, "")}`;
 
-		setTimeout(() => {
-			updateProfile(
+		try {
+			await updateProfile(
 				fullName,
 				finalPhoneNumber,
 				selectedCampus,
 				selectedLocation,
 			);
-			setIsSaving(false);
 			setMsg({
 				type: "success",
 				txt: "Your contact profiles and default dispatch terminal were saved.",
 			});
-		}, 1000);
+		} catch (err: any) {
+			setMsg({
+				type: "error",
+				txt: err?.message || "Could not save your profile. Please try again.",
+			});
+		} finally {
+			setIsSaving(false);
+		}
 	};
 
 	// Render D3 chart
@@ -1143,18 +1155,29 @@ export const ProfileView: React.FC = () => {
 							</p>
 						)}
 					</div>
-					<button
-						onClick={handleEnablePush}
-						disabled={pushState === 'loading' || pushState === 'enabled'}
-						className={`shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-							pushState === 'enabled'
-								? 'bg-emerald-deep/10 text-emerald-strong cursor-default'
-								: 'bg-emerald-deep hover:bg-emerald-strong text-white disabled:opacity-50'
-						}`}
-						id="enable_push_btn"
-					>
-						{pushState === 'enabled' ? 'Enabled ✓' : pushState === 'loading' ? 'Enabling…' : 'Enable'}
-					</button>
+					<div className="flex gap-2 shrink-0">
+						<button
+							onClick={handleEnablePush}
+							disabled={pushState === 'loading' || pushState === 'enabled'}
+							className={`px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+								pushState === 'enabled'
+									? 'bg-emerald-deep/10 text-emerald-strong cursor-default'
+									: 'bg-emerald-deep hover:bg-emerald-strong text-white disabled:opacity-50'
+							}`}
+							id="enable_push_btn"
+						>
+							{pushState === 'enabled' ? 'Enabled' : pushState === 'loading' ? 'Working…' : 'Enable'}
+						</button>
+						{pushState === 'enabled' && (
+							<button
+								onClick={handleDisablePush}
+								className="px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer bg-neutral-100 hover:bg-neutral-200 text-emerald-strong"
+								id="disable_push_btn"
+							>
+								Disable
+							</button>
+						)}
+					</div>
 				</div>
 			</GlassPanel>
 

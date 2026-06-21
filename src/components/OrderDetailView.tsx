@@ -19,7 +19,8 @@ import {
   Star,
   Play,
   HelpCircle,
-  ClipboardList
+  ClipboardList,
+  CreditCard
 } from 'lucide-react';
 import { Escalation, OrderStatus } from '../types';
 
@@ -32,7 +33,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
     orders,
     navigateTo,
     confirmDelivery,
-    cancelOrder,
+    payOrder,
     progressOrderStatus,
     escalations,
     createEscalation,
@@ -57,6 +58,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
   const [escalateCategory, setEscalateCategory] = useState<Escalation['category']>('NON_DELIVERY');
   const [escalateDescription, setEscalateDescription] = useState('');
   const [escalateSubmitted, setEscalateSubmitted] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Form states for reviews
   const [reviewRating, setReviewRating] = useState<number>(5);
@@ -111,40 +113,62 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleConfirmReceipt = () => {
-    confirmDelivery(order.id);
+  const handleConfirmReceipt = async () => {
+    setActionError(null);
+    try {
+      await confirmDelivery(order.id);
+    } catch (err: any) {
+      setActionError(err?.message || 'Could not confirm delivery. Please try again.');
+    }
   };
 
   const handleCancelOrder = () => {
-    cancelOrder(order.id);
     setShowCancelModal(false);
-    setTimeout(() => {
-      navigateTo('/orders');
-    }, 1000);
+    navigateTo(`/orders/${order.id}/escalate`);
   };
 
   const handleRefreshStatus = () => {
     progressOrderStatus(order.id);
   };
 
-  const handleSubmitEscalation = (e: React.FormEvent) => {
+  const handleResumePayment = async () => {
+    setActionError(null);
+    try {
+      const authUrl = await payOrder(order.id);
+      window.location.href = authUrl;
+    } catch (err: any) {
+      setActionError(err?.message || 'Could not resume payment. Please try again.');
+    }
+  };
+
+  const handleSubmitEscalation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!escalateDescription.trim()) return;
 
-    createEscalation(order.id, escalateCategory, escalateDescription);
-    setEscalateSubmitted(true);
-    setTimeout(() => {
-      navigateTo(`/orders/${orderId}`);
-    }, 1200);
+    setActionError(null);
+    try {
+      await createEscalation(order.id, escalateCategory, escalateDescription);
+      setEscalateSubmitted(true);
+      setTimeout(() => {
+        navigateTo(`/orders/${orderId}`);
+      }, 1200);
+    } catch (err: any) {
+      setActionError(err?.message || 'Could not submit the support ticket. Please try again.');
+    }
   };
 
-  const handleSubmitReview = (e: React.FormEvent) => {
+  const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
-    createReview(order.id, reviewRating, reviewComment);
-    setReviewSubmitted(true);
-    setTimeout(() => {
-      navigateTo(`/orders/${orderId}`);
-    }, 1200);
+    setActionError(null);
+    try {
+      await createReview(order.id, reviewRating, reviewComment);
+      setReviewSubmitted(true);
+      setTimeout(() => {
+        navigateTo(`/orders/${orderId}`);
+      }, 1200);
+    } catch (err: any) {
+      setActionError(err?.message || 'Could not submit your review. Please try again.');
+    }
   };
 
   // RENDER ESCALATING FORM SCREEN
@@ -163,6 +187,12 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
           <h2 className="font-display font-black text-2xl text-emerald-strong">Report Order Issue</h2>
           <p className="text-xs text-muted-grey">Lodge structured query to the Venite Dispatch Operations center.</p>
         </section>
+
+        {actionError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-xs text-danger font-semibold rounded-xl">
+            {actionError}
+          </div>
+        )}
 
         {escalateSubmitted ? (
           <GlassPanel className="p-8 text-center border-t-4 border-t-red-500 max-w-md mx-auto">
@@ -259,6 +289,12 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
           <p className="text-xs text-muted-grey">Your reviews grade partner scorecards directly for campus dispatch.</p>
         </section>
 
+        {actionError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-xs text-danger font-semibold rounded-xl">
+            {actionError}
+          </div>
+        )}
+
         {reviewSubmitted ? (
           <GlassPanel className="p-8 text-center border-t-4 border-t-mango-warm max-w-md mx-auto">
             <CheckCircle2 className="w-12 h-12 text-emerald-strong mx-auto mb-4 animate-bounce" />
@@ -338,6 +374,12 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
           orderNumber={order.orderNumber}
           onDismiss={() => setShowDeliveredCelebration(false)}
         />
+      )}
+
+      {actionError && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-xs text-danger font-semibold rounded-xl">
+          {actionError}
+        </div>
       )}
       <button
         onClick={() => navigateTo('/orders')}
@@ -599,6 +641,17 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
               </button>
             )}
 
+            {order.status === 'PENDING_PAYMENT' && (
+              <button
+                onClick={handleResumePayment}
+                className="w-full py-3.5 bg-mango-warm hover:bg-amber-400 text-emerald-strong font-black text-xs rounded-xl transition cursor-pointer text-center flex items-center justify-center gap-1 shadow-sm"
+                id="resume_payment_trigger"
+              >
+                <CreditCard className="w-4 h-4 text-emerald-strong" />
+                <span>Resume Paystack Payment</span>
+              </button>
+            )}
+
             {['CANCELLED', 'REFUNDED'].indexOf(order.status) === -1 && !order.hasEscalation && (
               <button
                 onClick={() => navigateTo(`/orders/${orderId}/escalate`)}
@@ -610,33 +663,33 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
               </button>
             )}
 
-            {/* Cancel Order Action */}
+            {/* Customer cancellation is handled through support because the backend has no customer cancel endpoint. */}
             {['PENDING_PAYMENT', 'PAID', 'ACCEPTED'].includes(order.status) && (
               <button
                 onClick={() => setShowCancelModal(true)}
                 className="w-full py-3 bg-neutral-100/50 hover:bg-neutral-200 text-neutral-500 font-bold text-xs rounded-xl transition cursor-pointer text-center flex items-center justify-center gap-1"
               >
-                <span>Cancel Order</span>
+                <span>Get Cancellation Help</span>
               </button>
             )}
           </div>
         </div>
       </section>
 
-      {/* Cancel Order Modal */}
+      {/* Cancellation support modal */}
       {showCancelModal && (
         <dialog open className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-transparent backdrop:bg-black/85 backdrop:backdrop-blur-xs m-auto outline-none w-full h-full animate-fade-in">
           <div className="bg-white rounded-3xl p-6 md:p-8 max-w-sm w-full border border-neutral-200 shadow-2xl flex flex-col gap-6 relative shadow-emerald-deep/5">
-            <h3 className="font-display font-black text-xl text-emerald-strong text-center">Cancel Order?</h3>
+            <h3 className="font-display font-black text-xl text-emerald-strong text-center">Need cancellation help?</h3>
             <p className="text-xs text-muted-grey text-center leading-relaxed">
-              Are you sure you want to cancel {order.orderNumber}? If you have already paid, refund credits may take up to 48 hours to process.
+              Customer cancellation is handled by support for order {order.orderNumber}. We will prefill the order context on the issue form.
             </p>
             <div className="flex flex-col gap-3">
               <button
                 onClick={handleCancelOrder}
                 className="w-full py-3.5 bg-danger hover:bg-red-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-sm"
               >
-                Yes, Cancel Order
+                Open Support Form
               </button>
               <button
                 onClick={() => setShowCancelModal(false)}

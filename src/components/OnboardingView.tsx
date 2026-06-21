@@ -32,7 +32,7 @@ export const OnboardingView: React.FC = () => {
     depts: filteredLocs.filter(loc => loc.zone === zoneName && loc.type === 'Department')
   }));
 
-  const handleFinishOnboarding = (e: React.FormEvent) => {
+  const handleFinishOnboarding = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -58,10 +58,13 @@ export const OnboardingView: React.FC = () => {
       ? localPhone.trim()
       : `${selectedCountry.dialCode}${localPhone.trim().replace(/^0/, '')}`;
 
-    setTimeout(() => {
-      completeOnboarding(fullName.trim(), finalPhoneNumber, selectedCampus, selectedLocation);
+    try {
+      await completeOnboarding(fullName.trim(), finalPhoneNumber, selectedCampus, selectedLocation);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Could not complete onboarding. Please try again.');
+    } finally {
       setIsSubmitting(false);
-    }, 1200);
+    }
   };
 
   return (
