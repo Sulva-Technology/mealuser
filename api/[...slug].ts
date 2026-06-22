@@ -1,17 +1,10 @@
 // Vercel serverless entry. Routes every /api/* request into the Express BFF.
-// Imports are done dynamically INSIDE the handler so that any module-load,
-// boot, or invocation error is surfaced in the response body instead of an
-// opaque FUNCTION_INVOCATION_FAILED. app.listen is skipped because VERCEL is set.
-import type { IncomingMessage, ServerResponse } from 'http';
+// Express `app` is itself an (req, res) handler. The import MUST carry the .js
+// extension: the project is `"type": "module"`, so Vercel ships this function
+// as ESM, and Node ESM rejects extensionless relative imports at runtime
+// (ERR_MODULE_NOT_FOUND). app.listen is skipped because process.env.VERCEL is set.
+import { createApp } from '../server.js';
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  try {
-    const { createApp } = await import('../server');
-    const app = createApp({ isProd: true }) as unknown as (req: IncomingMessage, res: ServerResponse) => void;
-    return app(req, res);
-  } catch (e) {
-    res.statusCode = 500;
-    res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ stage: 'load', error: String((e as any)?.stack || e) }));
-  }
-}
+const app = createApp({ isProd: true });
+
+export default app;
