@@ -167,8 +167,7 @@ interface MealDirectContextType {
   refreshOrder: (orderId: string) => Promise<Order | null>;
   fetchPaymentStatus: (orderId: string) => Promise<{ orderStatus: OrderStatus; paid: boolean; terminalFail: boolean } | null>;
   confirmDelivery: (orderId: string) => Promise<void>;
-  progressOrderStatus: (orderId: string) => void; // Simulated status incrementer for demo!
-  cancelOrder: (orderId: string) => void;
+  progressOrderStatus: (orderId: string) => void; // Pulls latest authoritative status from backend
   reorderOrder: (orderId: string) => void;
 
   // Escalations
@@ -1230,32 +1229,6 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     );
   };
 
-  const cancelOrder = (orderId: string) => {
-    setOrders(prev =>
-      prev.map(o => {
-        if (o.id === orderId) {
-          const timestamp = new Date().toISOString();
-          return {
-            ...o,
-            status: 'CANCELLED',
-            statusHistory: [
-              ...o.statusHistory,
-              {
-                status: 'CANCELLED',
-                timestamp,
-                title: 'Order Cancelled',
-                description: 'Your order has been cancelled.'
-              }
-            ]
-          };
-        }
-        return o;
-      })
-    );
-
-    addNotification('Order Cancelled 🚫', 'The order has been marked as cancelled.', 'order_status', orderId);
-  };
-
   const reorderOrder = (orderId: string) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
@@ -1515,7 +1488,6 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         fetchPaymentStatus,
         confirmDelivery,
         progressOrderStatus,
-        cancelOrder,
         reorderOrder,
 
         escalations,

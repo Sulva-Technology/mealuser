@@ -160,12 +160,11 @@ async function sendBackendResponse(res: Response, backendResponse: globalThis.Re
   res.send(Buffer.from(body));
 }
 
-function applySecurity(app: Express, backendUrl: string, isProd: boolean) {
-  app.use((_, res, next) => {
-    res.locals.cspNonce = crypto.randomBytes(16).toString('base64url');
-    next();
-  });
+// sha256 of the inline JSON-LD block in index.html. Keep in sync with the same
+// hash in vercel.json (the Vercel static host can't use a per-request nonce).
+const JSONLD_CSP_HASH = "'sha256-YQaCX+CN1JByv0BHWMgnCbdTQpqBRIGgEs2KnbqOET8='";
 
+function applySecurity(app: Express, backendUrl: string, isProd: boolean) {
   app.use(
     helmet({
       crossOriginEmbedderPolicy: false,
@@ -179,7 +178,7 @@ function applySecurity(app: Express, backendUrl: string, isProd: boolean) {
               'form-action': ["'self'", 'https://checkout.paystack.com'],
               'frame-src': ["'self'", 'https://checkout.paystack.com'],
               'img-src': ["'self'", 'data:', 'https:'],
-              'script-src': ["'self'", (_req, res) => `'nonce-${(res as any).locals.cspNonce}'`],
+              'script-src': ["'self'", JSONLD_CSP_HASH],
               'style-src': ["'self'", "'unsafe-inline'"]
             }
           }
@@ -376,7 +375,7 @@ export async function startServer() {
     app.use(express.static(distPath, { index: false }));
     app.get('*', async (_req, res) => {
       const html = await fs.promises.readFile(path.join(distPath, 'index.html'), 'utf8');
-      res.type('html').send(html.replaceAll('%CSP_NONCE%', res.locals.cspNonce));
+      res.type('html').send(html);
     });
   }
 
