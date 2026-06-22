@@ -13,7 +13,7 @@ import path from 'path';
 
 dotenv.config();
 
-const DEFAULT_BACKEND_URL = 'https://mealdirectbackend.onrender.com';
+const DEFAULT_BACKEND_URL = 'https://api.mealdirectly.com';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const ACCESS_COOKIE = 'md_access_token';
 const REFRESH_COOKIE = 'md_refresh_token';
