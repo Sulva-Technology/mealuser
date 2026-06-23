@@ -1,18 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { useMealDirect } from '../store';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useMealDirect, apiRequest, mapLocation } from '../store';
+import { PresetLocation } from '../types';
 import { AppShell, GlassPanel } from './CommonUI';
-import { MapPin, Phone, Check, ShieldAlert, Library, Home, ChevronRight, Globe, User } from 'lucide-react';
+import { MapPin, Phone, Check, ShieldAlert, Library, Home, ChevronRight, Globe, User, Loader2, RefreshCw } from 'lucide-react';
 import { COUNTRIES, validateCountryPhone } from '../utils/countries';
 
 export const OnboardingView: React.FC = () => {
-  const { user, completeOnboarding, navigateTo, campuses: CAMPUSES, locations: PRESET_LOCATIONS } = useMealDirect();
+  const { user, completeOnboarding, navigateTo, campuses: CAMPUSES } = useMealDirect();
 
   // States
   const [fullName, setFullName] = useState(user?.fullName || '');
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]);
   const [localPhone, setLocalPhone] = useState('');
   const [selectedCampus, setSelectedCampus] = useState('');
-  
+
+  // Dispatch terminals for the *currently selected* campus. The global catalog only
+  // ever holds one campus, so onboarding must fetch per selected campus on demand.
+  const [terminals, setTerminals] = useState<PresetLocation[]>([]);
+  const [terminalsLoading, setTerminalsLoading] = useState(false);
+  const [terminalsError, setTerminalsError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!selectedCampus && CAMPUSES.length > 0) {
       setSelectedCampus(CAMPUSES[0].id);
@@ -23,13 +30,40 @@ export const OnboardingView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Group locations by the actual zones returned by the backend (no hardcoded zone names)
-  const filteredLocs = PRESET_LOCATIONS.filter(loc => loc.campusId === selectedCampus);
-  const zoneNames = Array.from(new Set(filteredLocs.map(loc => loc.zone)));
+  // Fetch the dispatch terminals (campus locations) for a campus. Reads the array
+  // from the response envelope ({ data: [...] }) and keeps only active terminals;
+  // both "department" and "hostel" types are valid terminals.
+  const loadTerminals = useCallback(async (campusId: string) => {
+    if (!campusId) return;
+    setTerminalsLoading(true);
+    setTerminalsError(null);
+    try {
+      const raw = await apiRequest(`/campuses/${campusId}/locations`, 'GET');
+      const rows = Array.isArray(raw) ? raw : [];
+      setTerminals(rows.filter((loc: any) => loc.active !== false).map(mapLocation));
+    } catch (err: any) {
+      setTerminals([]);
+      setTerminalsError(err?.message || 'Could not load dispatch terminals. Please retry.');
+    } finally {
+      setTerminalsLoading(false);
+    }
+  }, []);
+
+  // Refetch terminals whenever the selected campus changes.
+  useEffect(() => {
+    if (selectedCampus) {
+      loadTerminals(selectedCampus);
+    } else {
+      setTerminals([]);
+    }
+  }, [selectedCampus, loadTerminals]);
+
+  // Group terminals by the actual zones returned by the backend (no hardcoded zone names)
+  const zoneNames = Array.from(new Set(terminals.map(loc => loc.zone)));
   const zoneGroups = zoneNames.map(zoneName => ({
     zoneName,
-    hostels: filteredLocs.filter(loc => loc.zone === zoneName && loc.type === 'Hostel'),
-    depts: filteredLocs.filter(loc => loc.zone === zoneName && loc.type === 'Department')
+    hostels: terminals.filter(loc => loc.zone === zoneName && loc.type === 'Hostel'),
+    depts: terminals.filter(loc => loc.zone === zoneName && loc.type === 'Department')
   }));
 
   const handleFinishOnboarding = async (e: React.FormEvent) => {
@@ -192,7 +226,27 @@ export const OnboardingView: React.FC = () => {
             </div>
 
             {/* Structured Card Grid Selection — grouped by real backend zones */}
-            {filteredLocs.length === 0 ? (
+            {terminalsLoading ? (
+              <div className="flex items-center justify-center gap-2.5 py-8 text-xs text-muted-grey">
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-deep" />
+                <span>Loading dispatch terminals…</span>
+              </div>
+            ) : terminalsError ? (
+              <div className="flex flex-col items-center gap-3 py-6 text-center">
+                <p className="text-xs text-danger font-semibold flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 shrink-0" />
+                  {terminalsError}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => loadTerminals(selectedCampus)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-deep/8 text-emerald-strong hover:bg-emerald-deep/15 transition cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Retry
+                </button>
+              </div>
+            ) : terminals.length === 0 ? (
               <p className="text-xs text-muted-grey italic py-4 text-center">
                 No dispatch terminals available for this campus yet. Please check back shortly.
               </p>
