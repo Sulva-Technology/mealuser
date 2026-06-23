@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useMealDirect, apiRequest, mapLocation } from '../store';
+import { useMealDirect, publicCatalogRequest, mapLocation } from '../store';
 import { PresetLocation } from '../types';
 import { AppShell, GlassPanel } from './CommonUI';
 import { MapPin, Phone, Check, ShieldAlert, Library, Home, ChevronRight, Globe, User, Loader2, RefreshCw } from 'lucide-react';
@@ -38,7 +38,7 @@ export const OnboardingView: React.FC = () => {
     setTerminalsLoading(true);
     setTerminalsError(null);
     try {
-      const raw = await apiRequest(`/campuses/${campusId}/locations`, 'GET');
+      const raw = await publicCatalogRequest(`/campuses/${campusId}/locations`);
       const rows = Array.isArray(raw) ? raw : [];
       setTerminals(rows.filter((loc: any) => loc.active !== false).map(mapLocation));
     } catch (err: any) {

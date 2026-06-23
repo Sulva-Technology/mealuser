@@ -25,6 +25,10 @@ import { setMonitoringUser } from './utils/monitoring';
 // Must match the BFF mount in server.ts (app.use('/api/v1', ...)). A bare '/v1'
 // default hits no Express route → Vite returns 404 on every call.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+// Anonymous catalog passthrough. When using the BFF (default), public discovery
+// endpoints are served unauthenticated at /api/public. When VITE_API_BASE_URL points
+// straight at the backend, those endpoints are already public there, so reuse it.
+const PUBLIC_CATALOG_BASE = API_BASE === '/api/v1' ? '/api/public' : API_BASE;
 const AUTH_BASE = '/api/auth';
 const CSRF_COOKIE = 'md_csrf';
 
@@ -117,6 +121,25 @@ export async function apiRequest(path: string, method = 'GET', body: any = null,
   if (response.status === 204) return null;
   const json = await response.json();
   return unwrapEnvelope(json);
+}
+
+// Anonymous catalog discovery (campus dispatch terminals + delivery slots).
+// These backend endpoints are public, but the authenticated apiRequest proxy attaches
+// the user's token, which makes the backend enforce campus membership and 403 during
+// onboarding (before the user has joined any campus). This hits the BFF's unauthenticated
+// passthrough so the backend serves them publicly. Returns the unwrapped envelope array.
+export async function publicCatalogRequest(path: string): Promise<any> {
+  const response = await fetch(`${PUBLIC_CATALOG_BASE}${path}`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin'
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData?.error?.message || errorData?.message || `HTTP ${response.status}`);
+  }
+  if (response.status === 204) return null;
+  return unwrapEnvelope(await response.json());
 }
 
 interface RouterState {

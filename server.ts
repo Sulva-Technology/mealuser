@@ -295,6 +295,31 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  // Public, unauthenticated catalog discovery (campus dispatch terminals + delivery
+  // slots). These backend endpoints are public, but the authenticated /api/v1 proxy
+  // always attaches the user's token, which makes the backend enforce campus membership
+  // and 403 during onboarding (before the user has joined any campus). Forward these
+  // WITHOUT auth so the backend serves them publicly. Whitelisted paths only — this is
+  // not a general open proxy.
+  app.get(
+    ['/api/public/campuses/:campusId/locations', '/api/public/campuses/:campusId/delivery-slots'],
+    async (req, res) => {
+      const resource = req.path.endsWith('/delivery-slots') ? 'delivery-slots' : 'locations';
+      const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+      const targetUrl = `${backendUrl}/v1/campuses/${encodeURIComponent(req.params.campusId)}/${resource}${query}`;
+      try {
+        const backendResponse = await fetchImpl(targetUrl, {
+          method: 'GET',
+          headers: { Accept: 'application/json' }
+        });
+        await sendBackendResponse(res, backendResponse);
+      } catch (error) {
+        console.error(`Public catalog proxy failed [GET ${req.originalUrl}]:`, error);
+        res.status(502).json({ error: { code: 'BACKEND_UNAVAILABLE', message: 'Backend service unavailable.' } });
+      }
+    }
+  );
+
   // Deterministic local nutrition estimate (no external AI dependency)
   const nutritionCache = new Map<string, any>();
   app.post('/api/nutrition', (req, res) => {
