@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useMealDirect } from '../store';
 import { AppShell, GlassPanel, Currency } from './CommonUI';
+import { resolveImage, handleImageError } from '../utils/images';
 import {
   Trash2,
   Calendar,
@@ -137,7 +138,7 @@ export const CartView: React.FC = () => {
                 return (
                   <div key={cartItem.menuItemId} className="py-4.5 first:pt-0 last:pb-0 flex gap-4">
                     <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-neutral-100">
-                      <img src={dbItem.imageUrl} alt={dbItem.name} className="w-full h-full object-cover" />
+                      <img src={resolveImage(dbItem.imageUrl, dbItem.name)} onError={handleImageError(dbItem.name)} alt={dbItem.name} className="w-full h-full object-cover" />
                     </div>
 
                     <div className="flex-1 min-w-0">

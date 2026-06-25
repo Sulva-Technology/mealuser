@@ -4,6 +4,7 @@ import { AppShell, GlassPanel, Currency } from './CommonUI';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import { ArrowLeft, Clock, Star, Plus, Minus, ShoppingCart, Info, ShieldAlert, Trash2, Flame, Sparkles, Heart } from 'lucide-react';
 import { CartItem, MenuItem } from '../types';
+import { resolveImage, handleImageError } from '../utils/images';
 
 interface VendorDetailViewProps {
   vendorId: string;
@@ -209,7 +210,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
           <section className="mb-6" id="vendor_detail_banner">
             <div className="bg-white rounded-3xl border border-emerald-deep/8 overflow-hidden shadow-xs">
               <div className="h-48 md:h-60 w-full relative">
-                <img src={vendor.imageUrl} alt={vendor.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                <img src={resolveImage(vendor.imageUrl, vendor.name)} onError={handleImageError(vendor.name)} alt={vendor.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                 <div className="absolute bottom-5 left-5 right-5 text-white">
                   <h2 className="font-display text-2xl md:text-3xl font-black tracking-tight" id="active_vendor_name">{vendor.name}</h2>
@@ -259,7 +260,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
                             id={`menu_item_card_${item.id}`}
                           >
                             <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-neutral-100 relative">
-                              <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                              <img src={resolveImage(item.imageUrl, item.name)} onError={handleImageError(item.name)} alt={item.name} className="w-full h-full object-cover" />
                               {activeInCart && (
                                 <div className="absolute inset-0 bg-emerald-strong/20 backdrop-blur-xs flex items-center justify-center text-white" />
                               )}
@@ -363,7 +364,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
           <div className="bg-white rounded-3xl p-6 max-w-md w-full max-h-[88vh] overflow-y-auto border border-emerald-deep/12 shadow-2xl flex flex-col gap-5">
             <div className="text-center">
               <div className="w-20 h-20 rounded-2xl overflow-hidden mx-auto mb-3 bg-neutral-100">
-                <img src={selectedItem.imageUrl} alt={selectedItem.name} className="w-full h-full object-cover" />
+                <img src={resolveImage(selectedItem.imageUrl, selectedItem.name)} onError={handleImageError(selectedItem.name)} alt={selectedItem.name} className="w-full h-full object-cover" />
               </div>
               <h3 className="font-display font-black text-sm text-emerald-strong">{selectedItem.name}</h3>
               <p className="text-[10px] text-muted-grey mt-1">{selectedItem.description}</p>

@@ -500,7 +500,15 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [router, setRouter] = useState<RouterState>(parseLocation());
 
   // Global Context state: Selection overrides
-  const [currentDate, setCurrentDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  // Default to tomorrow: campus dispatch is a next-day pre-order model (inventory and
+  // delivery batches are provisioned for current_date + 1), and same-day slots are
+  // routinely past their ordering cutoff. Defaulting to tomorrow lands checkout on a
+  // valid, in-stock slot out of the box; users can still pick another date in the cart.
+  const [currentDate, setCurrentDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  });
   const [currentSlotId, setCurrentSlotId] = useState<string>('slot_12'); // Defaults to Lunch
   const [currentLocationId, setCurrentLocationId] = useState<string>('');
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMealDirect } from '../store';
 import { AppShell, GlassPanel, Currency, LoadingSkeleton } from './CommonUI';
 import { DeliveredAnimation } from './DeliveredAnimation';
+import { resolveImage, handleImageError } from '../utils/images';
 import { LiveTrackerPip } from './LiveTrackerPip';
 import {
   ArrowLeft,
@@ -576,7 +577,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
             
             <div className="flex items-center gap-2.5">
               <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-neutral-100">
-                <img src={activeVendor?.imageUrl} alt={activeVendor?.name} className="w-full h-full object-cover" />
+                <img src={resolveImage(activeVendor?.imageUrl, activeVendor?.name || 'vendor')} onError={handleImageError(activeVendor?.name || 'vendor')} alt={activeVendor?.name} className="w-full h-full object-cover" />
               </div>
               <div>
                 <h5 className="font-bold text-emerald-strong">{activeVendor?.name}</h5>

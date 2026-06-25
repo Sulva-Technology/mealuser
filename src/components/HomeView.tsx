@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useMealDirect } from '../store';
 import { isSlotAvailable } from '../utils/helpers';
+import { resolveImage, handleImageError } from '../utils/images';
 // First import Skeleton
 import { AppShell, GlassPanel, Currency, Skeleton } from './CommonUI';
 // ... remove LoadingSkeleton import if possible or just ignore it.
@@ -533,7 +534,8 @@ export const HomeView: React.FC = () => {
                     <div>
                       <div className="h-44 w-full relative overflow-hidden">
                         <img
-                          src={v.imageUrl}
+                          src={resolveImage(v.imageUrl, v.name)}
+                          onError={handleImageError(v.name)}
                           alt={v.name}
                           referrerPolicy="no-referrer"
                           className="w-full h-full object-cover transition duration-300 hover:scale-105"
@@ -621,7 +623,7 @@ export const HomeView: React.FC = () => {
                       tabIndex={0}
                     >
                       <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0 bg-neutral-50 relative">
-                        <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                        <img src={resolveImage(item.imageUrl, item.name)} onError={handleImageError(item.name)} alt={item.name} className="w-full h-full object-cover" />
                       </div>
                       <div className="flex-1 flex flex-col justify-between">
                         <div>

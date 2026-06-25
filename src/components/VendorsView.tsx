@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useMealDirect } from '../store';
 import { isSlotAvailable, formatNGN } from '../utils/helpers';
+import { resolveImage, handleImageError } from '../utils/images';
 import { AppShell, GlassPanel, Skeleton } from './CommonUI';
 import { Search, Store, Star, Filter, Heart, ChevronRight, XCircle, Sparkles } from 'lucide-react';
 import { motion, Variants } from 'motion/react';
@@ -158,7 +159,7 @@ export const VendorsView: React.FC = () => {
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 bg-neutral-100">
-                              <img src={v.imageUrl} alt={v.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              <img src={resolveImage(v.imageUrl, v.name)} onError={handleImageError(v.name)} alt={v.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             </div>
                             <div className="min-w-0">
                               <h5 className="text-[11.5px] font-bold text-ink-deep flex items-center gap-1.5">
@@ -212,7 +213,7 @@ export const VendorsView: React.FC = () => {
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
                               <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 bg-neutral-100 relative">
-                                <img src={d.imageUrl} alt={d.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                <img src={resolveImage(d.imageUrl, d.name)} onError={handleImageError(d.name)} alt={d.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                               </div>
                               <div className="min-w-0">
                                 <h5 className="text-[11.5px] font-bold text-ink-deep truncate flex items-center gap-1">
@@ -356,7 +357,8 @@ export const VendorsView: React.FC = () => {
                   <div className="flex flex-col sm:flex-row h-full">
                     <div className="h-44 sm:h-auto sm:w-44 shrink-0 relative overflow-hidden">
                       <img
-                        src={v.imageUrl}
+                        src={resolveImage(v.imageUrl, v.name)}
+                        onError={handleImageError(v.name)}
                         alt={v.name}
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover transition duration-300 hover:scale-105"

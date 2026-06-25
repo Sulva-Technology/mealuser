@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatNGN, isSlotAvailable } from '../utils/helpers';
+import { formatNGN, isSlotAvailable, computeSpendHistory } from '../utils/helpers';
 import {
   normalizeStatus,
   mapMenuItem,
@@ -8,7 +8,7 @@ import {
   mapVendor,
   mergeServerOrders
 } from '../store';
-import type { Order } from '../types';
+import type { Order, MenuItem } from '../types';
 
 describe('formatNGN', () => {
   it('formats kobo into naira currency', () => {
@@ -126,6 +126,58 @@ describe('mapSlot', () => {
     expect(slot.id).toBe('s1');
     expect(slot.time).toBe('12:00');
     expect(slot.label).toBe('Lunch (12:00)');
+  });
+});
+
+describe('computeSpendHistory', () => {
+  const menuItems = [
+    { id: 'm1', name: 'Garden Salad', category: 'Salad Bowls' },
+    { id: 'm2', name: 'Eba', category: 'Fried Swallow' }
+  ] as unknown as MenuItem[];
+
+  const order = (over: Partial<Order>): Order =>
+    ({
+      status: 'DELIVERED',
+      createdAt: '2026-06-22',
+      totalKobo: 0,
+      items: [],
+      ...over
+    } as unknown as Order);
+
+  it('returns empty for no orders', () => {
+    expect(computeSpendHistory([], menuItems)).toEqual([]);
+  });
+
+  it('sums real spend, picks top category, bounds the health index', () => {
+    const orders: Order[] = [
+      order({
+        createdAt: '2026-06-22',
+        totalKobo: 80000,
+        items: [{ menuItemId: 'm1', name: 'Garden Salad', priceKobo: 40000, quantity: 2, spoonsCount: 0 }]
+      }),
+      order({
+        status: 'CONFIRMED',
+        createdAt: '2026-06-23',
+        totalKobo: 20000,
+        items: [{ menuItemId: 'm2', name: 'Eba', priceKobo: 20000, quantity: 1, spoonsCount: 0 }]
+      })
+    ];
+    const result = computeSpendHistory(orders, menuItems);
+    expect(result).toHaveLength(1);
+    expect(result[0].spendAmount).toBe(1000); // (80000 + 20000) kobo -> naira
+    expect(result[0].mostOrderedCategory).toBe('Salad Bowls'); // qty 2 > qty 1
+    expect(result[0].healthyIndex).toBeGreaterThanOrEqual(0);
+    expect(result[0].healthyIndex).toBeLessThanOrEqual(100);
+  });
+
+  it('excludes non-spend statuses (pending/cancelled/refunded/expired)', () => {
+    const orders: Order[] = [
+      order({ status: 'PENDING_PAYMENT', totalKobo: 99900 }),
+      order({ status: 'CANCELLED', totalKobo: 99900 }),
+      order({ status: 'REFUNDED', totalKobo: 99900 }),
+      order({ status: 'EXPIRED', totalKobo: 99900 })
+    ];
+    expect(computeSpendHistory(orders, menuItems)).toEqual([]);
   });
 });
 

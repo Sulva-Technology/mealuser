@@ -23,60 +23,15 @@ import {
 	User,
 } from "lucide-react";
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMealDirect } from "../store";
 import {
 	COUNTRIES,
 	parseStoredPhone,
 	validateCountryPhone,
 } from "../utils/countries";
+import { computeSpendHistory } from "../utils/helpers";
 import { AppShell, Currency, GlassPanel } from "./CommonUI";
-
-interface SpendData {
-	weekLabel: string;
-	spendAmount: number;
-	mostOrderedCategory: string;
-	healthyIndex: number; // 0-100 rating
-	tip: string;
-}
-
-const spendHistory: SpendData[] = [
-	{
-		weekLabel: "Wk 19",
-		spendAmount: 7500,
-		mostOrderedCategory: "Protein Mains",
-		healthyIndex: 88,
-		tip: "Splendid protein-to-carb balance! Your orders consisting of charcoal grilled quarter poultry with sweet potatos aligned well with fiber targets.",
-	},
-	{
-		weekLabel: "Wk 20",
-		spendAmount: 9200,
-		mostOrderedCategory: "Traditional Swallow",
-		healthyIndex: 78,
-		tip: "Your intake of local vegetable egusi satisfies mineral needs. Balance high carbohydrate swallows by opting for smaller custom portions.",
-	},
-	{
-		weekLabel: "Wk 21",
-		spendAmount: 5800,
-		mostOrderedCategory: "Grains & Salad",
-		healthyIndex: 94,
-		tip: "Optimal performance! Fueling with Jollof rice paired with excess plantain dodo and raw salads meets clean fuel standards.",
-	},
-	{
-		weekLabel: "Wk 22",
-		spendAmount: 12400,
-		mostOrderedCategory: "Mains & Poultry",
-		healthyIndex: 82,
-		tip: "High energy consumption. Great charcoal protein ratios; remember to include fresh green sides to aid cellular assimilation!",
-	},
-	{
-		weekLabel: "Wk 23",
-		spendAmount: 10100,
-		mostOrderedCategory: "Healthy Wraps",
-		healthyIndex: 90,
-		tip: "Excellent choice. Double-garlic beef shawarma wraps are rich in proteins. Standardizing snack frequencies keeps study focus sharp!",
-	},
-];
 
 export const ProfileView: React.FC = () => {
 	const {
@@ -92,8 +47,15 @@ export const ProfileView: React.FC = () => {
 		unregisterDeviceToken,
 		campuses: CAMPUSES,
 		locations: PRESET_LOCATIONS,
-		vendors: VENDORS
+		vendors: VENDORS,
+		menuItems: MENU_ITEMS
 	} = useMealDirect();
+
+	// Real spending/nutrition tracker, derived from the customer's own orders.
+	const spendHistory = useMemo(
+		() => computeSpendHistory(orders, MENU_ITEMS),
+		[orders, MENU_ITEMS],
+	);
 
 	// If user is null, fallback values
 	const [fullName, setFullName] = useState(user?.fullName || "");
@@ -133,7 +95,13 @@ export const ProfileView: React.FC = () => {
 
 	// D3 ref & state
 	const svgRef = useRef<SVGSVGElement | null>(null);
-	const [selectedWeek, setSelectedWeek] = useState<number>(4); // Wk 23 by default
+	const [selectedWeek, setSelectedWeek] = useState<number>(0);
+	// Default selection to the most recent week whenever the data changes.
+	useEffect(() => {
+		setSelectedWeek(Math.max(0, spendHistory.length - 1));
+	}, [spendHistory.length]);
+	const safeWeek = Math.min(selectedWeek, Math.max(0, spendHistory.length - 1));
+	const hasSpendData = spendHistory.length > 0;
 
 	// Filter locations
 	const filteredLocs = PRESET_LOCATIONS.filter(
@@ -214,6 +182,7 @@ export const ProfileView: React.FC = () => {
 
 		const d3Container = d3.select(svgRef.current);
 		d3Container.selectAll("*").remove();
+		if (!hasSpendData) return;
 
 		const margin = { top: 30, right: 15, bottom: 35, left: 55 };
 		const width = 500;
@@ -238,10 +207,11 @@ export const ProfileView: React.FC = () => {
 			.range([0, chartWidth])
 			.padding(0.4);
 
-		// Y scale
+		// Y scale (dynamic to the customer's actual spend)
+		const maxSpend = d3.max(spendHistory, (d) => d.spendAmount) || 0;
 		const yScale = d3
 			.scaleLinear()
-			.domain([0, 15000])
+			.domain([0, Math.max(maxSpend, 1000)])
 			.nice()
 			.range([chartHeight, 0]);
 
@@ -295,8 +265,8 @@ export const ProfileView: React.FC = () => {
 			.attr("width", xScale.bandwidth())
 			.attr("height", (d) => chartHeight - yScale(d.spendAmount))
 			.attr("rx", 6)
-			.attr("fill", (d, i) => (i === selectedWeek ? "#10b981" : "#111827"))
-			.attr("opacity", (d, i) => (i === selectedWeek ? 1.0 : 0.6))
+			.attr("fill", (d, i) => (i === safeWeek ? "#10b981" : "#111827"))
+			.attr("opacity", (d, i) => (i === safeWeek ? 1.0 : 0.6))
 			.style("cursor", "pointer")
 			.style("transition", "all 0.2s ease");
 
@@ -313,7 +283,7 @@ export const ProfileView: React.FC = () => {
 			.style("font-size", "9px")
 			.style("font-family", "JetBrains Mono, monospace")
 			.style("font-weight", "700")
-			.style("fill", (d, i) => (i === selectedWeek ? "#065f46" : "#374151"));
+			.style("fill", (d, i) => (i === safeWeek ? "#065f46" : "#374151"));
 
 		// Interactive behaviors
 		bars
@@ -323,14 +293,14 @@ export const ProfileView: React.FC = () => {
 			.on("mouseout", function (_event, d) {
 				const idx = spendHistory.indexOf(d);
 				d3.select(this)
-					.attr("fill", idx === selectedWeek ? "#10b981" : "#111827")
-					.attr("opacity", idx === selectedWeek ? 1.0 : 0.6);
+					.attr("fill", idx === safeWeek ? "#10b981" : "#111827")
+					.attr("opacity", idx === safeWeek ? 1.0 : 0.6);
 			})
 			.on("click", (_event, d) => {
 				const idx = spendHistory.indexOf(d);
 				setSelectedWeek(idx);
 			});
-	}, [selectedWeek]);
+	}, [safeWeek, spendHistory, hasSpendData]);
 
 	return (
 		<AppShell activeTab="profile">
@@ -383,66 +353,79 @@ export const ProfileView: React.FC = () => {
 					</span>
 				</div>
 				<p className="text-xs text-muted-grey mb-4 font-normal">
-					Click any weekly bar on the chart below to inspect category details,
-					check your dietary health rating, and unlock nutrient insights!
+					{hasSpendData
+						? "Click any weekly bar on the chart below to inspect category details, check your dietary health rating, and unlock nutrient insights!"
+						: "Your weekly spending and nutrition insights appear here once you start ordering."}
 				</p>
 
-				{/* D3 Canvas container */}
-				<div className="bg-neutral-50/50 p-4 rounded-2xl border border-neutral-100 flex items-center justify-center mb-5">
-					<div className="w-full max-w-sm md:max-w-md">
-						<svg ref={svgRef} className="w-full h-auto" />
-					</div>
-				</div>
-
-				{/* Dynamic Detail Insights box */}
-				<div className="bg-white p-4.5 rounded-2xl border border-emerald-deep/10 shadow-xs relative overflow-hidden transition-all duration-300">
-					<div className="absolute right-0 top-0 translate-x-3 -translate-y-3 w-16 h-16 bg-emerald-deep/5 rounded-full blur-xs pointer-events-none" />
-
-					<div className="flex flex-wrap items-center justify-between gap-2.5 pb-3.5 border-b border-light-grey/15">
-						<div>
-							<span className="text-[9px] font-mono font-black text-muted-grey uppercase">
-								Selected Period
-							</span>
-							<h4 className="font-display font-black text-xs text-ink-deep mt-0.5">
-								{spendHistory[selectedWeek].weekLabel} (Spending Period)
-							</h4>
-						</div>
-
-						<div className="flex gap-4">
-							<div>
-								<span className="text-[9px] font-mono font-black text-muted-grey uppercase block">
-									Top Category
-								</span>
-								<span className="text-xs font-bold text-emerald-strong">
-									{spendHistory[selectedWeek].mostOrderedCategory}
-								</span>
-							</div>
-							<div className="text-right">
-								<span className="text-[9px] font-mono font-black text-muted-grey uppercase block">
-									Dietary Health Ratio
-								</span>
-								<span className="text-xs font-black text-emerald-deep flex items-center gap-0.5 justify-end">
-									<Heart className="w-3.5 h-3.5 fill-current text-rose-500 shrink-0" />
-									<span>{spendHistory[selectedWeek].healthyIndex}%</span>
-								</span>
+				{hasSpendData ? (
+					<>
+						{/* D3 Canvas container */}
+						<div className="bg-neutral-50/50 p-4 rounded-2xl border border-neutral-100 flex items-center justify-center mb-5">
+							<div className="w-full max-w-sm md:max-w-md">
+								<svg ref={svgRef} className="w-full h-auto" />
 							</div>
 						</div>
-					</div>
 
-					<div className="mt-3 text-xs leading-relaxed text-[#2D3331]">
-						<div className="flex gap-2 items-start">
-							<Award className="w-4 h-4 text-emerald-deep shrink-0 mt-0.5" />
-							<div>
-								<p className="font-semibold text-[11px] text-ink-deep leading-tight">
-									Campus Nutrition Advisor Insight:
-								</p>
-								<p className="text-muted-grey text-[11px] mt-1">
-									{spendHistory[selectedWeek].tip}
-								</p>
+						{/* Dynamic Detail Insights box */}
+						<div className="bg-white p-4.5 rounded-2xl border border-emerald-deep/10 shadow-xs relative overflow-hidden transition-all duration-300">
+							<div className="absolute right-0 top-0 translate-x-3 -translate-y-3 w-16 h-16 bg-emerald-deep/5 rounded-full blur-xs pointer-events-none" />
+
+							<div className="flex flex-wrap items-center justify-between gap-2.5 pb-3.5 border-b border-light-grey/15">
+								<div>
+									<span className="text-[9px] font-mono font-black text-muted-grey uppercase">
+										Selected Period
+									</span>
+									<h4 className="font-display font-black text-xs text-ink-deep mt-0.5">
+										{spendHistory[safeWeek].weekLabel} (Spending Period)
+									</h4>
+								</div>
+
+								<div className="flex gap-4">
+									<div>
+										<span className="text-[9px] font-mono font-black text-muted-grey uppercase block">
+											Top Category
+										</span>
+										<span className="text-xs font-bold text-emerald-strong">
+											{spendHistory[safeWeek].mostOrderedCategory}
+										</span>
+									</div>
+									<div className="text-right">
+										<span className="text-[9px] font-mono font-black text-muted-grey uppercase block">
+											Dietary Health Ratio
+										</span>
+										<span className="text-xs font-black text-emerald-deep flex items-center gap-0.5 justify-end">
+											<Heart className="w-3.5 h-3.5 fill-current text-rose-500 shrink-0" />
+											<span>{spendHistory[safeWeek].healthyIndex}%</span>
+										</span>
+									</div>
+								</div>
+							</div>
+
+							<div className="mt-3 text-xs leading-relaxed text-[#2D3331]">
+								<div className="flex gap-2 items-start">
+									<Award className="w-4 h-4 text-emerald-deep shrink-0 mt-0.5" />
+									<div>
+										<p className="font-semibold text-[11px] text-ink-deep leading-tight">
+											Campus Nutrition Advisor Insight:
+										</p>
+										<p className="text-muted-grey text-[11px] mt-1">
+											{spendHistory[safeWeek].tip}
+										</p>
+									</div>
+								</div>
 							</div>
 						</div>
+					</>
+				) : (
+					<div className="bg-neutral-50/50 p-8 rounded-2xl border border-neutral-100 text-center">
+						<Activity className="w-9 h-9 text-neutral-300 stroke-[1.2] mx-auto mb-2" />
+						<p className="text-xs text-muted-grey">
+							No spending yet. Place your first order to start building your
+							weekly nutrition &amp; spending insights.
+						</p>
 					</div>
-				</div>
+				)}
 			</GlassPanel>
 
 			{/* Dynamic Order History List */}
