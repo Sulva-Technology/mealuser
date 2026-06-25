@@ -410,7 +410,7 @@ export function normalizeOrder(s: any, existing?: Order): Order {
     ? s.items.map((it: any, i: number) => mapOrderItem(it, existing?.items?.[i]))
     : (existing?.items || []);
   return {
-    id: s.id,
+    id: s.id || s.orderId,
     orderNumber: s.orderNumber || existing?.orderNumber || '',
     userId: s.customerId || existing?.userId || '',
     vendorId: s.vendorId || existing?.vendorId || '',
@@ -1152,7 +1152,24 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       'Idempotency-Key': newIdempotencyKey()
     });
 
-    const normalized = normalizeOrder(newOrder);
+    // Create returns only { orderId }. Enrich from the local cart/quote so the order
+    // id resolves and the local card isn't zeroed before the Paystack redirect; full
+    // detail is refreshed from the backend on return.
+    const quote = getCartQuote();
+    const normalized = normalizeOrder({
+      ...newOrder,
+      id: newOrder.orderId ?? newOrder.id,
+      orderStatus: 'pending_payment',
+      vendorId: cart.vendorId,
+      campusId: user.campusId || campuses[0]?.id || '',
+      locationId: cart.deliveryLocationId || user.defaultLocationId || '',
+      deliverySlotId: cart.deliverySlotId || currentSlotId,
+      serviceDate: cart.deliveryDate || currentDate,
+      foodSubtotalKobo: quote.subtotalKobo,
+      deliveryFeeKobo: quote.deliveryFeeKobo,
+      totalKobo: quote.totalKobo,
+      specialInstructions
+    });
     setOrders(prev => [normalized, ...prev]);
     triggerVibration(VIBE_PATTERNS.MEDIUM);
     return normalized;
