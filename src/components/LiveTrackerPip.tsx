@@ -11,6 +11,9 @@ export const LiveTrackerPip: React.FC<LiveTrackerPipProps> = ({ order }) => {
   const { vendors } = useMealDirect();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Retained so the button can act as a real toggle and so we can tear the window down on unmount.
+  const pipWindowRef = useRef<Window | null>(null);
+  const pipLoopRef = useRef<number | null>(null);
   const [isPipActive, setIsPipActive] = useState(false);
 
   const vendorName = vendors.find(v => v.id === order.vendorId)?.name || 'Kitchen Partner';
@@ -53,29 +56,38 @@ export const LiveTrackerPip: React.FC<LiveTrackerPipProps> = ({ order }) => {
       ctx.font = '14px -apple-system';
       ctx.fillText(`From: ${vendorName}`, canvas.width / 2, 115);
 
-      // Status translation
-      const statusLabels: Record<string, string> = {
-        PLACED: 'WAITING FOR KITCHEN',
-        PREP: 'MEAL IS PREPARING',
-        EN_ROUTE: 'DISPATCH EN ROUTE',
+      // Status translation — keyed to the real OrderStatus values the backend emits.
+      const statusLabels: Partial<Record<OrderStatus, string>> = {
+        PENDING_PAYMENT: 'AWAITING PAYMENT',
+        PAID: 'PAYMENT CONFIRMED',
+        ACCEPTED: 'KITCHEN ACCEPTED',
+        PREPARING: 'MEAL IS PREPARING',
+        READY: 'PACKAGED & READY',
+        PICKED_UP: 'RIDER PICKED UP',
+        OUT_FOR_DELIVERY: 'DISPATCH EN ROUTE',
         DELIVERED: 'DELIVERED AT TERMINAL',
         CONFIRMED: 'ORDER CONFIRMED',
-        CANCELLED: 'ORDER CANCELLED'
+        ESCALATED: 'UNDER REVIEW',
+        CANCELLED: 'ORDER CANCELLED',
+        REFUNDED: 'ORDER REFUNDED',
+        EXPIRED: 'ORDER EXPIRED'
       };
 
-      const displayStatus = statusLabels[order.status] || order.status;
+      const displayStatus = statusLabels[order.status] || order.status.replace(/_/g, ' ');
+      const isComplete = ['DELIVERED', 'CONFIRMED'].includes(order.status);
+      const isTerminal = ['DELIVERED', 'CONFIRMED', 'CANCELLED', 'REFUNDED', 'EXPIRED'].includes(order.status);
 
       // Big Status Display
-      ctx.fillStyle = ['DELIVERED', 'CONFIRMED'].includes(order.status) ? '#10b981' : '#facc15';
+      ctx.fillStyle = isComplete ? '#10b981' : '#facc15';
       ctx.font = '900 24px -apple-system';
       ctx.fillText(displayStatus, canvas.width / 2, 170);
 
-      // Progress bar calculations
-      const statusesForProgress = ['PLACED', 'PREP', 'EN_ROUTE', 'DELIVERED'];
-      let currentIndex = statusesForProgress.indexOf(order.status);
+      // Progress bar calculations — advance through the real dispatch pipeline.
+      const statusFlow: OrderStatus[] = ['PAID', 'ACCEPTED', 'PREPARING', 'READY', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+      let currentIndex = statusFlow.indexOf(order.status);
       if (currentIndex === -1) {
-        if (order.status === 'CONFIRMED') currentIndex = 3;
-        else currentIndex = 0;
+        if (order.status === 'CONFIRMED') currentIndex = statusFlow.length - 1;
+        else currentIndex = 0; // pending payment / escalated / cancelled anchor at the start
       }
 
       // Draw Progress Bar Track
@@ -91,16 +103,16 @@ export const LiveTrackerPip: React.FC<LiveTrackerPipProps> = ({ order }) => {
       ctx.fill();
 
       // Draw Progress Bar Fill
-      const targetProgress = (currentIndex / Math.max(1, statusesForProgress.length - 1)) * barWidth;
+      const targetProgress = (currentIndex / Math.max(1, statusFlow.length - 1)) * barWidth;
       const progress = targetProgress > 0 ? targetProgress : 10; // at least 10px
 
-      ctx.fillStyle = ['DELIVERED', 'CONFIRMED'].includes(order.status) ? '#10b981' : '#facc15';
+      ctx.fillStyle = isComplete ? '#10b981' : '#facc15';
       ctx.beginPath();
       ctx.roundRect(barX, barY, progress, barHeight, radius);
       ctx.fill();
 
       // Animate pulsing dot
-      if (!['DELIVERED', 'CONFIRMED', 'CANCELLED'].includes(order.status)) {
+      if (!isTerminal) {
         const time = Date.now() / 1000;
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
@@ -128,34 +140,52 @@ export const LiveTrackerPip: React.FC<LiveTrackerPipProps> = ({ order }) => {
 
   const handleTogglePip = async () => {
     if (!videoRef.current || !canvasRef.current) return;
-    
+
+    // If a Document PiP window is already open, treat the click as "close".
+    // (requestWindow() throws InvalidStateError if called while one is already open.)
+    if (pipWindowRef.current && !pipWindowRef.current.closed) {
+      pipWindowRef.current.close(); // the 'pagehide' listener resets refs + state
+      return;
+    }
+
     try {
       // 1. Try Document Picture-in-Picture API (Chrome/Edge Native OS Window)
       if ('documentPictureInPicture' in window) {
         // @ts-ignore
-        const pipWindow = await window.documentPictureInPicture.requestWindow({ width: 400, height: 300 });
-        const pipCanvas = document.createElement('canvas');
+        const pipWindow: Window = await window.documentPictureInPicture.requestWindow({ width: 400, height: 300 });
+        pipWindowRef.current = pipWindow;
+
+        const pipCanvas = pipWindow.document.createElement('canvas');
         pipCanvas.width = 400; pipCanvas.height = 300;
         pipCanvas.style.width = '100%';
         pipCanvas.style.height = '100%';
-        pipWindow.document.body.appendChild(pipCanvas);
+        pipCanvas.style.display = 'block';
         pipWindow.document.body.style.margin = "0";
         pipWindow.document.body.style.backgroundColor = "#0a0a0a";
+        pipWindow.document.body.appendChild(pipCanvas);
         setIsPipActive(true);
-        
-        // Push frames manually to new pip window
+
+        // Push frames to the PiP window. Drive with the PiP window's OWN rAF so it keeps
+        // painting while the app tab is backgrounded/minimized — the opener's rAF is throttled.
+        const pipCtx = pipCanvas.getContext('2d');
         const loop = () => {
-          if (pipWindow.closed) {
-            setIsPipActive(false);
-            return;
+          if (pipWindow.closed) return;
+          if (pipCtx && canvasRef.current) {
+            pipCtx.drawImage(canvasRef.current, 0, 0);
           }
-          const ctx = pipCanvas.getContext('2d');
-          if (ctx && canvasRef.current) {
-            ctx.drawImage(canvasRef.current, 0, 0);
-          }
-          requestAnimationFrame(loop);
+          pipLoopRef.current = pipWindow.requestAnimationFrame(loop);
         };
         loop();
+
+        // Reset when the window closes for any reason (toggle button, native X, or unmount).
+        pipWindow.addEventListener('pagehide', () => {
+          if (pipLoopRef.current !== null) {
+            pipWindow.cancelAnimationFrame(pipLoopRef.current);
+            pipLoopRef.current = null;
+          }
+          pipWindowRef.current = null;
+          setIsPipActive(false);
+        });
         return; // Success
       }
 
@@ -207,6 +237,15 @@ export const LiveTrackerPip: React.FC<LiveTrackerPipProps> = ({ order }) => {
       }
     }
   };
+
+  // Close any open Document PiP window when the tracker leaves the screen.
+  useEffect(() => {
+    return () => {
+      if (pipWindowRef.current && !pipWindowRef.current.closed) {
+        pipWindowRef.current.close();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
