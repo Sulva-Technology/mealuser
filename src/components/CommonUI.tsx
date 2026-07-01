@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMealDirect } from '../store';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -97,10 +97,46 @@ interface AppShellProps {
 
 export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
   const { user, navigateTo, signOut, notifications, cart, activeInAppAlert, dismissInAppAlert } = useMealDirect();
-  const [pwaInstalled, setPwaInstalled] = useState(false);
+  // Real PWA install handling. `beforeinstallprompt` only fires on Chromium
+  // (Android/desktop) once the app meets installability criteria and isn't
+  // already installed. iOS Safari never fires it — there we show manual
+  // "Add to Home Screen" instructions instead.
+  const isStandalone =
+    typeof window !== 'undefined' &&
+    (window.matchMedia?.('(display-mode: standalone)').matches ||
+      // iOS Safari exposes this non-standard flag when launched from home screen
+      (window.navigator as any).standalone === true);
+  const isIOS =
+    typeof navigator !== 'undefined' &&
+    /iphone|ipad|ipod/i.test(navigator.userAgent) &&
+    !(window.navigator as any).standalone;
+
+  const [pwaInstalled, setPwaInstalled] = useState(isStandalone);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showIosHelp, setShowIosHelp] = useState(false);
   const [showPwaPrompt, setShowPwaPrompt] = useState(() => {
+    if (isStandalone) return false;
     return !localStorage.getItem('md_pwa_prompt_dismissed');
   });
+
+  useEffect(() => {
+    const onBeforeInstall = (e: Event) => {
+      // Stop Chrome's mini-infobar so we can trigger the prompt from our button
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    const onInstalled = () => {
+      setPwaInstalled(true);
+      setShowPwaPrompt(false);
+      setDeferredPrompt(null);
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
 
   const unreadCount = notifications.filter(n => !n.read).length;
   const cartItemCount = cart ? cart.items.reduce((sum, item) => sum + item.quantity, 0) : 0;
@@ -118,10 +154,29 @@ export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
     setShowPwaPrompt(false);
   };
 
-  const handleInstallPwa = () => {
-    setPwaInstalled(true);
-    setShowPwaPrompt(false);
-    alert('Meal Direct PWA has been added to your Home Screen securely!');
+  const handleInstallPwa = async () => {
+    // iOS: no programmatic install — surface the manual Share-sheet steps.
+    if (isIOS) {
+      setShowIosHelp(true);
+      return;
+    }
+    if (!deferredPrompt) {
+      // Installable criteria not met yet (or already installed / unsupported
+      // browser). Nothing to prompt — leave the banner for the user to dismiss.
+      return;
+    }
+    deferredPrompt.prompt();
+    try {
+      const choice = await deferredPrompt.userChoice;
+      if (choice?.outcome === 'accepted') {
+        setShowPwaPrompt(false);
+      }
+    } catch {
+      /* user dismissed */
+    } finally {
+      // A deferred prompt can only be used once
+      setDeferredPrompt(null);
+    }
   };
 
   return (
@@ -182,8 +237,9 @@ export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
         )}
       </AnimatePresence>
 
-      {/* Global PWA Install Prompter */}
-      {showPwaPrompt && !pwaInstalled && (
+      {/* Global PWA Install Prompter — only when the browser can actually
+          install (deferred prompt captured) or on iOS (manual instructions). */}
+      {showPwaPrompt && !pwaInstalled && (deferredPrompt || isIOS) && (
         <div className="bg-emerald-strong text-white px-4 py-3 text-xs md:text-sm flex items-center justify-between shadow-lg sticky top-0 z-50 animate-fade-in border-b border-emerald-deep">
           <div className="flex items-center gap-3">
             <span className="p-1 px-2.5 rounded-full bg-mango-warm text-emerald-strong font-bold text-xs uppercase tracking-wider shadow-sm animate-pulse">PWA</span>
@@ -196,13 +252,42 @@ export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
               onClick={handleInstallPwa}
               className="bg-white hover:bg-neutral-100 text-emerald-strong px-3 py-1.5 rounded-lg font-bold text-xs transition active:scale-95 cursor-pointer shadow-sm"
             >
-              Install App
+              {isIOS ? 'How to install' : 'Install App'}
             </button>
             <button
               onClick={handleDismissPwa}
               className="text-white/80 hover:text-white px-2 py-1 text-xs font-semibold cursor-pointer"
             >
               Later
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* iOS manual "Add to Home Screen" instructions */}
+      {showIosHelp && (
+        <div
+          className="fixed inset-0 z-[60] bg-ink-deep/60 backdrop-blur-sm flex items-end md:items-center justify-center p-4"
+          onClick={() => setShowIosHelp(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display font-black text-lg text-emerald-strong">Install on iPhone / iPad</h3>
+            <ol className="mt-3 space-y-2.5 text-sm text-ink-deep list-decimal list-inside">
+              <li>Tap the <strong>Share</strong> icon in Safari’s toolbar.</li>
+              <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+              <li>Tap <strong>Add</strong> in the top-right corner.</li>
+            </ol>
+            <p className="text-[11px] text-muted-grey mt-3">
+              Install must be done from Safari — Chrome and in-app browsers on iOS can’t add to the Home Screen.
+            </p>
+            <button
+              onClick={() => setShowIosHelp(false)}
+              className="mt-5 w-full bg-emerald-deep hover:bg-emerald-strong text-white py-2.5 rounded-xl font-bold text-sm transition active:scale-95 cursor-pointer"
+            >
+              Got it
             </button>
           </div>
         </div>

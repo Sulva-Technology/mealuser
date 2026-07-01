@@ -13,14 +13,17 @@ import {
 	Home,
 	Library,
 	LifeBuoy,
+	Lock,
 	MapPin,
 	MessageCircle,
 	Phone,
 	RotateCcw,
 	Shield,
 	ShieldAlert,
+	ShieldCheck,
 	Trash2,
 	User,
+	Users,
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -60,10 +63,37 @@ export const ProfileView: React.FC = () => {
 	// If user is null, fallback values
 	const [fullName, setFullName] = useState(user?.fullName || "");
 
-	// Push notifications
-	const [pushState, setPushState] = useState<'idle' | 'loading' | 'enabled' | 'unavailable'>(
-		typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'enabled' : 'idle'
-	);
+	// Push notifications. "Enabled" must reflect a real, live push subscription —
+	// not merely that the user once granted notification permission. We confirm
+	// the subscription on mount below.
+	const [pushState, setPushState] = useState<'idle' | 'loading' | 'enabled' | 'unavailable'>('idle');
+	// Whether web push is even configured in this build. If the VAPID key wasn't
+	// injected at build time, subscription can never succeed — surface that
+	// explicitly instead of letting the toggle silently no-op.
+	const pushConfigured = Boolean(import.meta.env.VITE_VAPID_PUBLIC_KEY);
+
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
+					return;
+				}
+				if (Notification.permission !== 'granted') return;
+				const reg = await navigator.serviceWorker.getRegistration();
+				const sub = await reg?.pushManager.getSubscription();
+				// Enabled only if we have a live subscription AND a token we sent to the backend.
+				if (!cancelled && sub && localStorage.getItem('md_device_token')) {
+					setPushState('enabled');
+				}
+			} catch {
+				/* leave as idle — user can re-enable */
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 	const handleEnablePush = async () => {
 		setPushState('loading');
 		const ok = await registerDeviceToken();
@@ -556,18 +586,15 @@ export const ProfileView: React.FC = () => {
 					</h3>
 
 					<div className="flex items-center gap-4 mb-6">
-						<div className="w-16 h-16 rounded-full bg-emerald-deep/10 flex items-center justify-center text-emerald-deep font-bold text-xl uppercase shadow-sm border border-emerald-deep/20 overflow-hidden relative">
+						<div className="w-16 h-16 rounded-full bg-emerald-deep/10 flex items-center justify-center text-emerald-deep font-bold text-xl uppercase shadow-sm border border-emerald-deep/20 overflow-hidden">
 							{user?.fullName?.charAt(0) || "G"}
-							<div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer">
-								<span className="text-[10px] text-white font-bold">EDIT</span>
-							</div>
 						</div>
 						<div>
 							<p className="text-xs font-bold text-emerald-strong">
 								Profile Picture
 							</p>
 							<p className="text-[10px] text-muted-grey mt-0.5">
-								JPEG, PNG up to 2MB
+								Auto-generated from your student name
 							</p>
 						</div>
 					</div>
@@ -1111,6 +1138,41 @@ export const ProfileView: React.FC = () => {
 
 					<button
 						type="button"
+						className="w-full flex items-center justify-between p-3.5 bg-white border border-emerald-deep/10 rounded-xl hover:bg-emerald-deep/5 transition cursor-pointer active:scale-95"
+					>
+						<div className="flex items-center gap-2.5">
+							<Lock className="w-4 h-4 text-muted-grey" />
+							<span className="text-xs font-bold text-emerald-strong">
+								Data Protection & Security
+							</span>
+						</div>
+						<span className="text-muted-grey text-xs">→</span>
+					</button>
+
+					<button
+						type="button"
+						className="w-full flex items-center justify-between p-3.5 bg-white border border-emerald-deep/10 rounded-xl hover:bg-emerald-deep/5 transition cursor-pointer active:scale-95"
+					>
+						<div className="flex items-center gap-2.5">
+							<Users className="w-4 h-4 text-muted-grey" />
+							<span className="text-xs font-bold text-emerald-strong">
+								Community Guidelines
+							</span>
+						</div>
+						<span className="text-muted-grey text-xs">→</span>
+					</button>
+
+					<div className="flex items-start gap-2.5 p-3.5 mt-1 bg-emerald-deep/5 border border-emerald-deep/10 rounded-xl">
+						<ShieldCheck className="w-4 h-4 text-emerald-deep shrink-0 mt-0.5" />
+						<p className="text-[10px] text-muted-grey leading-relaxed">
+							Your payments and personal data are encrypted in transit and
+							secured on our servers. We never share your details with third
+							parties without consent.
+						</p>
+					</div>
+
+					<button
+						type="button"
 						onClick={() => setShowDeleteModal(true)}
 						className="w-full flex items-center justify-between p-3.5 mt-4 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 transition cursor-pointer active:scale-95 group"
 					>
@@ -1132,7 +1194,12 @@ export const ProfileView: React.FC = () => {
 						<p className="text-[11px] text-muted-grey mt-1 leading-relaxed max-w-sm">
 							Get instant browser alerts when your order status changes, instead of waiting for the app to refresh.
 						</p>
-						{pushState === 'unavailable' && (
+						{!pushConfigured && (
+							<p className="text-[10px] text-warning mt-1.5 font-semibold">
+								Push notifications aren’t configured for this build (missing VAPID key). Status updates still arrive via auto-refresh.
+							</p>
+						)}
+						{pushConfigured && pushState === 'unavailable' && (
 							<p className="text-[10px] text-warning mt-1.5 font-semibold">
 								Push unavailable (permission denied or not configured). Status updates still arrive via auto-refresh.
 							</p>
@@ -1141,7 +1208,7 @@ export const ProfileView: React.FC = () => {
 					<div className="flex gap-2 shrink-0">
 						<button
 							onClick={handleEnablePush}
-							disabled={pushState === 'loading' || pushState === 'enabled'}
+							disabled={!pushConfigured || pushState === 'loading' || pushState === 'enabled'}
 							className={`px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
 								pushState === 'enabled'
 									? 'bg-emerald-deep/10 text-emerald-strong cursor-default'

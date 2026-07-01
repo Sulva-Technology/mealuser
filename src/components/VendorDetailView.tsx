@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useMealDirect, apiRequest, mapMenuItem } from '../store';
 import { AppShell, GlassPanel, Currency } from './CommonUI';
 import { LoadingSkeleton } from './LoadingSkeleton';
-import { ArrowLeft, Clock, Star, Plus, Minus, ShoppingCart, Info, ShieldAlert, Trash2, Flame, Sparkles, Heart } from 'lucide-react';
+import { ArrowLeft, Clock, Star, Plus, Minus, ShoppingCart, Info, ShieldAlert, Trash2, Flame, Sparkles, Heart, Check } from 'lucide-react';
 import { CartItem, MenuItem } from '../types';
 import { resolveImage, handleImageError } from '../utils/images';
 
@@ -24,6 +24,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
   const {
     cart,
     addToCart,
+    addItemsToCart,
     updateCartItemQuantity,
     updateCartItemSpoons,
     removeFromCart,
@@ -35,6 +36,24 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
     createMenuItemReview,
     vendors
   } = useMealDirect();
+
+  // Multi-select "order form" state: menuItemId -> chosen quantity. Items here are
+  // staged and committed to the cart together via the single Add-all button.
+  const [selection, setSelection] = useState<Record<string, number>>({});
+  const selectedCount = Object.keys(selection).length;
+
+  const toggleSelect = (id: string) => {
+    setSelection(prev => {
+      const next = { ...prev };
+      if (id in next) delete next[id];
+      else next[id] = 1;
+      return next;
+    });
+  };
+
+  const setSelectionQty = (id: string, qty: number) => {
+    setSelection(prev => ({ ...prev, [id]: Math.max(1, Math.min(99, qty)) }));
+  };
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -68,6 +87,8 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
   const [spoonCountTemp, setSpoonCountTemp] = useState<number>(1);
   const [showReplaceCartModal, setShowReplaceCartModal] = useState(false);
   const [pendingCartItem, setPendingCartItem] = useState<{ vId: string; item: CartItem } | null>(null);
+  // Set when a multi-select batch is pending a cart-replace confirmation.
+  const [pendingBatch, setPendingBatch] = useState<CartItem[] | null>(null);
 
   // Nutrition (local estimate via /api/nutrition)
   const [nutrition, setNutrition] = useState<NutritionData | null>(null);
@@ -153,7 +174,37 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
     }
   };
 
+  // Commit the staged multi-select form to the cart. If a cart from another vendor
+  // exists, defer to the replace-cart confirmation first.
+  const handleAddSelected = () => {
+    const items: CartItem[] = Object.entries(selection).map(([menuItemId, quantity]) => ({
+      menuItemId,
+      quantity,
+      spoonsCount: cartItemsMap[menuItemId]?.spoonsCount ?? 1
+    }));
+    if (!items.length) return;
+
+    if (cart && cart.vendorId !== vendorId) {
+      setPendingBatch(items);
+      setShowReplaceCartModal(true);
+      return;
+    }
+
+    addItemsToCart(vendorId, items);
+    setSelection({});
+  };
+
   const handleConfirmReplaceCart = () => {
+    if (pendingBatch) {
+      clearCart();
+      setTimeout(() => {
+        addItemsToCart(vendorId, pendingBatch);
+        setShowReplaceCartModal(false);
+        setPendingBatch(null);
+        setSelection({});
+      }, 50);
+      return;
+    }
     if (pendingCartItem) {
       clearCart();
       setTimeout(() => {
@@ -533,7 +584,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
               Continuing will discard your old selection and start empty.
             </span>
             <div className="flex gap-2 mt-2">
-              <button onClick={() => { setShowReplaceCartModal(false); setPendingCartItem(null); }} className="flex-1 py-2.5 bg-neutral-50 hover:bg-neutral-100 text-muted-grey font-semibold text-xs rounded-xl transition cursor-pointer">Cancel</button>
+              <button onClick={() => { setShowReplaceCartModal(false); setPendingCartItem(null); setPendingBatch(null); }} className="flex-1 py-2.5 bg-neutral-50 hover:bg-neutral-100 text-muted-grey font-semibold text-xs rounded-xl transition cursor-pointer">Cancel</button>
               <button onClick={handleConfirmReplaceCart} className="flex-1 py-2.5 bg-danger hover:bg-red-700 text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1 shadow-md shadow-red-200" id="confirm_replace_cart">
                 <Trash2 className="w-3.5 h-3.5" /> Discard & Add
               </button>

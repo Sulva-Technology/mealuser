@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatNGN, isSlotAvailable, computeSpendHistory } from '../utils/helpers';
+import { formatNGN, isSlotAvailable, computeSpendHistory, MAX_ORDER_TOTAL_KOBO } from '../utils/helpers';
 import {
   normalizeStatus,
   mapMenuItem,
@@ -14,6 +14,24 @@ describe('formatNGN', () => {
   it('formats kobo into naira currency', () => {
     expect(formatNGN(150000)).toContain('1,500.00');
     expect(formatNGN(0)).toContain('0.00');
+  });
+});
+
+describe('order cap (MAX_ORDER_TOTAL_KOBO)', () => {
+  const exceedsCap = (totalKobo: number) => totalKobo > MAX_ORDER_TOTAL_KOBO;
+
+  it('is ₦2490', () => {
+    expect(MAX_ORDER_TOTAL_KOBO).toBe(249000);
+  });
+
+  it('allows totals at or below the cap', () => {
+    expect(exceedsCap(249000)).toBe(false);
+    expect(exceedsCap(100000)).toBe(false);
+  });
+
+  it('blocks totals above the cap', () => {
+    expect(exceedsCap(249001)).toBe(true);
+    expect(exceedsCap(500000)).toBe(true);
   });
 });
 

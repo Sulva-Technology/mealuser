@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useMealDirect } from '../store';
-import { formatNGN } from '../utils/helpers';
+import { formatNGN, MAX_ORDER_TOTAL_KOBO } from '../utils/helpers';
 import { AppShell, GlassPanel, Currency } from './CommonUI';
 import { ShieldCheck, ArrowRight, Loader2, Landmark, HelpCircle, MapPin, Clock, CreditCard, Lock, ClipboardList } from 'lucide-react';
 
@@ -75,6 +75,10 @@ export const CheckoutView: React.FC = () => {
     : [];
   const hasUnavailable = unavailableItems.length > 0;
 
+  // Order cap: final total (post-discount) must not exceed ₦2490. Block here so the
+  // server's VALIDATION_FAILED on POST /orders is never hit in the happy path.
+  const exceedsCap = displayTotalKobo > MAX_ORDER_TOTAL_KOBO;
+
   // States
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -87,6 +91,10 @@ export const CheckoutView: React.FC = () => {
   const handleLaunchPayment = () => {
     if (!isOnline) {
       setErrorMessage('Offline cache. Payout requires internet connectivity.');
+      return;
+    }
+    if (exceedsCap) {
+      setErrorMessage(`Order total exceeds the ${formatNGN(MAX_ORDER_TOTAL_KOBO)} maximum. Reduce your cart to continue.`);
       return;
     }
     setErrorMessage(null);
@@ -103,7 +111,12 @@ export const CheckoutView: React.FC = () => {
         }
     }).catch(err => {
         setIsCreatingOrder(false);
-        setErrorMessage(err.message || 'Failed to lock checkout inventory quotas. Try cooking options.');
+        const msg: string = err?.message || '';
+        if (/maximum allowed amount/i.test(msg)) {
+          setErrorMessage(`Order total exceeds the ${formatNGN(MAX_ORDER_TOTAL_KOBO)} maximum. Reduce your cart to continue.`);
+        } else {
+          setErrorMessage(msg || 'Failed to lock checkout inventory quotas. Try cooking options.');
+        }
     });
   };
 
@@ -310,6 +323,13 @@ export const CheckoutView: React.FC = () => {
                 <span className="text-xl font-black text-mango-warm select-all"><Currency kobo={displayTotalKobo} /></span>
               </div>
 
+              {exceedsCap && (
+                <div className="mb-3 p-3 bg-red-500/15 border border-red-300/30 rounded-xl text-[10px] text-red-100 font-semibold">
+                  Total {formatNGN(displayTotalKobo)} is over the {formatNGN(MAX_ORDER_TOTAL_KOBO)} per-order maximum.{' '}
+                  <button onClick={() => navigateTo('/cart')} className="underline font-bold cursor-pointer">Reduce your cart</button> to continue.
+                </div>
+              )}
+
               {hasUnavailable && (
                 <div className="mb-3 p-3 bg-red-500/15 border border-red-300/30 rounded-xl text-[10px] text-red-100 font-semibold">
                   Out of stock for this date/slot: {unavailableItems.map(it => it.name).join(', ')}. Change the delivery date or slot in your cart.
@@ -318,9 +338,9 @@ export const CheckoutView: React.FC = () => {
 
               <button
                 onClick={handleLaunchPayment}
-                disabled={hasUnavailable || isQuoteLoading}
+                disabled={hasUnavailable || isQuoteLoading || exceedsCap}
                 className={`w-full py-4 font-bold text-xs rounded-2xl transition shadow-lg shadow-emerald-deep/15 flex items-center justify-center gap-2 ${
-                  hasUnavailable || isQuoteLoading
+                  hasUnavailable || isQuoteLoading || exceedsCap
                     ? 'bg-mango-warm/40 text-emerald-strong/50 cursor-not-allowed'
                     : 'bg-mango-warm hover:bg-amber-400 text-emerald-strong active:scale-95 cursor-pointer'
                 }`}

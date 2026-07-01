@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { useMealDirect } from '../store';
+import { useMealDirect, isEmailUnconfirmedError } from '../store';
 import { AppShell, GlassPanel, Currency } from './CommonUI';
-import { LogIn, UserPlus, AlertCircle } from 'lucide-react';
+import { LogIn, UserPlus, AlertCircle, MailCheck } from 'lucide-react';
 
 export const AuthView: React.FC = () => {
   const { signIn, signUp } = useMealDirect();
@@ -10,6 +10,9 @@ export const AuthView: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  // When set, the account exists but the email hasn't been confirmed yet — show a
+  // "check your email app" prompt instead of the sign-in form.
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,14 +23,60 @@ export const AuthView: React.FC = () => {
       if (isLogin) {
         await signIn(email, password);
       } else {
-        await signUp(email, password);
+        const { needsConfirmation } = await signUp(email, password);
+        if (needsConfirmation) {
+          setPendingEmail(email);
+        }
       }
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      // A sign-in against an unconfirmed account also lands here — route it to the
+      // confirmation prompt rather than showing the raw "Email not confirmed" error.
+      if (isEmailUnconfirmedError(err?.message)) {
+        setPendingEmail(email);
+      } else {
+        setError(err.message || 'Authentication failed');
+      }
     } finally {
       setIsLoading(false);
     }
   };
+
+  if (pendingEmail) {
+    return (
+      <div className="min-h-screen bg-canvas-ivory flex items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <GlassPanel className="p-6 md:p-8 text-center flex flex-col items-center gap-5">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-emerald-deep/10 text-emerald-deep">
+              <MailCheck className="w-8 h-8" />
+            </div>
+            <div>
+              <h2 className="font-display font-black text-xl text-emerald-strong">Confirm your email</h2>
+              <p className="text-muted-grey text-sm mt-2 leading-relaxed">
+                We sent a confirmation link to <strong className="text-ink-deep break-all">{pendingEmail}</strong>.
+                Open your email app and tap the link to activate your account, then come back and sign in.
+              </p>
+            </div>
+            <div className="text-[11px] text-muted-grey bg-neutral-50 border border-neutral-100 rounded-xl px-3 py-2.5 leading-relaxed">
+              Can’t find it? Check your <strong>Spam / Promotions</strong> folder. The link can take a minute to arrive.
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setPendingEmail(null);
+                setIsLogin(true);
+                setPassword('');
+                setError(null);
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-emerald-deep hover:bg-emerald-strong text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-emerald-deep/25 transition-all active:scale-[0.98] cursor-pointer"
+            >
+              <LogIn className="w-5 h-5" />
+              Back to Sign In
+            </button>
+          </GlassPanel>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-canvas-ivory flex items-center justify-center p-4">

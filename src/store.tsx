@@ -88,6 +88,21 @@ async function authRequest(path: string, method = 'POST', body: any = null): Pro
   return response.json();
 }
 
+// Supabase/GoTrue reports "Email not confirmed" (and localized variants) when a
+// user signs in before clicking the confirmation link. Detect that so we can show
+// a friendly "check your email app" prompt instead of a raw error.
+export function isEmailUnconfirmedError(message?: string | null): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  return (
+    m.includes('not confirmed') ||
+    m.includes('email confirmation') ||
+    m.includes('confirm your email') ||
+    m.includes('verify your email') ||
+    m.includes('email not verified')
+  );
+}
+
 export async function apiRequest(path: string, method = 'GET', body: any = null, _token?: string | null, extraHeaders?: Record<string, string>): Promise<any> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -152,7 +167,7 @@ interface MealDirectContextType {
   user: UserProfile | null;
   onboardingData: { phone: string; campusId: string; locationId: string } | null;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
   completeOnboarding: (fullName: string, phone: string, campusId: string, locationId: string) => Promise<void>;
   updateProfile: (fullName: string, phone: string, campusId: string, defaultLocationId: string) => Promise<void>;
   signOut: () => void;
@@ -172,6 +187,7 @@ interface MealDirectContextType {
   // Cart
   cart: Cart | null;
   addToCart: (vendorId: string, item: CartItem) => void;
+  addItemsToCart: (vendorId: string, items: CartItem[]) => void;
   updateCartItemQuantity: (menuItemId: string, quantity: number) => void;
   updateCartItemSpoons: (menuItemId: string, spoonsCount: number, quantity?: number) => void;
   removeFromCart: (menuItemId: string) => void;
@@ -333,15 +349,35 @@ export function mapNotification(raw: any): AppNotification {
   };
 }
 
+// True when the payment gateway/webhook recorded a successful charge for this
+// payment snapshot — regardless of the order status. The webhook can settle the
+// charge slightly AFTER the payment window "expires", leaving a paid order stuck
+// showing EXPIRED. A confirmed payment must win over that stale status.
+export function isPaymentConfirmed(payment: any): boolean {
+  if (!payment) return false;
+  const status = (payment.status || '').toLowerCase();
+  return (
+    status === 'success' ||
+    status === 'successful' ||
+    status === 'paid' ||
+    !!payment.paidAt ||
+    !!payment.verifiedAt ||
+    (typeof payment.paidAmountKobo === 'number' && payment.paidAmountKobo > 0)
+  );
+}
+
 export function mapPaymentStatus(data: any): { orderStatus: OrderStatus; paid: boolean; terminalFail: boolean } {
   const orderStatus = normalizeStatus(data?.orderStatus);
   const payStatus = (data?.payment?.status || '').toLowerCase();
+  const paymentConfirmed = isPaymentConfirmed(data?.payment);
   const paid =
-    (orderStatus !== 'PENDING_PAYMENT' && orderStatus !== 'CANCELLED' && orderStatus !== 'EXPIRED') ||
-    payStatus === 'success' ||
-    payStatus === 'successful' ||
-    !!data?.payment?.paidAt;
-  const terminalFail = orderStatus === 'CANCELLED' || orderStatus === 'EXPIRED' || payStatus === 'failed';
+    paymentConfirmed ||
+    (orderStatus !== 'PENDING_PAYMENT' && orderStatus !== 'CANCELLED' && orderStatus !== 'EXPIRED');
+  // A confirmed payment overrides a stale EXPIRED/CANCELLED order status, so we
+  // never send a genuinely-paid order to the "cancelled/expired" failure screen.
+  const terminalFail =
+    !paymentConfirmed &&
+    (orderStatus === 'CANCELLED' || orderStatus === 'EXPIRED' || payStatus === 'failed');
   return { orderStatus, paid, terminalFail };
 }
 
@@ -405,7 +441,13 @@ function buildStatusHistory(status: OrderStatus, s: any, existing?: Order): Orde
 // Map a backend order (list or detail shape) into the client Order shape.
 // Merges with an existing local order to preserve client-only fields.
 export function normalizeOrder(s: any, existing?: Order): Order {
-  const status = normalizeStatus(s.orderStatus || s.status);
+  let status = normalizeStatus(s.orderStatus || s.status);
+  // If the backend still reports EXPIRED but the latest payment actually settled
+  // (webhook landed after the payment window), treat the order as PAID so it no
+  // longer surfaces as expired in the order history/timeline.
+  if (status === 'EXPIRED' && isPaymentConfirmed(s.latestPayment)) {
+    status = 'PAID';
+  }
   const items = Array.isArray(s.items) && s.items.length
     ? s.items.map((it: any, i: number) => mapOrderItem(it, existing?.items?.[i]))
     : (existing?.items || []);
@@ -828,17 +870,31 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string): Promise<{ needsConfirmation: boolean }> => {
     try {
       await authRequest('/customer/signup', 'POST', { email, password });
-      
-      // Auto sign in when sign up completes
-      await signIn(email, password);
-      
-      addNotification('Registration Successful 🎉', 'Welcome to Meal Direct! Please complete your delivery profile.', 'general');
     } catch (err: any) {
       console.error(err);
+      // Some backends respond to signup itself with an "email confirmation sent"
+      // signal rather than a session — treat that as pending confirmation.
+      if (isEmailUnconfirmedError(err?.message)) {
+        return { needsConfirmation: true };
+      }
       throw new Error(err.message || 'Error creating account');
+    }
+
+    // Try to establish a session. When the project requires email confirmation,
+    // login fails with an "email not confirmed" error until the user clicks the
+    // link — surface that as a pending-confirmation signal, not an error.
+    try {
+      await signIn(email, password);
+      addNotification('Registration Successful 🎉', 'Welcome to Meal Direct! Please complete your delivery profile.', 'general');
+      return { needsConfirmation: false };
+    } catch (loginErr: any) {
+      if (isEmailUnconfirmedError(loginErr?.message)) {
+        return { needsConfirmation: true };
+      }
+      throw loginErr;
     }
   };
 
@@ -983,6 +1039,42 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     addNotification(
       'Takeaway Added 🛍️',
       `A custom takeaway package was added to your cart.`,
+      'general'
+    );
+  };
+
+  // Add several items in a single state update. Calling addToCart in a loop would
+  // read the same stale `cart` closure for each call and clobber earlier adds, so
+  // batch merges here happen against one base and commit with a single setCart.
+  const addItemsToCart = (vendorId: string, newItems: CartItem[]) => {
+    if (!newItems.length) return;
+    triggerVibration(VIBE_PATTERNS.TICK);
+    // Single-vendor rule: switching vendor replaces the existing cart.
+    const items = cart && cart.vendorId === vendorId ? [...cart.items] : [];
+    for (const newItem of newItems) {
+      const existingIndex = items.findIndex(it => it.menuItemId === newItem.menuItemId);
+      if (existingIndex >= 0) {
+        items[existingIndex] = {
+          ...items[existingIndex],
+          quantity: items[existingIndex].quantity + newItem.quantity,
+          spoonsCount: Math.min(3, newItem.spoonsCount)
+        };
+      } else {
+        items.push({ ...newItem, spoonsCount: Math.min(3, newItem.spoonsCount) });
+      }
+    }
+
+    setCart({
+      vendorId,
+      items,
+      deliverySlotId: currentSlotId,
+      deliveryDate: currentDate,
+      deliveryLocationId: currentLocationId || user?.defaultLocationId || ''
+    });
+
+    addNotification(
+      'Takeaway Updated 🛍️',
+      `${newItems.length} item${newItems.length > 1 ? 's' : ''} added to your cart.`,
       'general'
     );
   };
@@ -1518,6 +1610,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
         cart,
         addToCart,
+        addItemsToCart,
         updateCartItemQuantity,
         updateCartItemSpoons,
         removeFromCart,

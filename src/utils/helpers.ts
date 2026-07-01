@@ -117,6 +117,11 @@ export function computeSpendHistory(
     });
 }
 
+// Max allowed final order total (food + delivery + service − discount), in kobo.
+// Server rejects POST /orders above this with VALIDATION_FAILED; client blocks
+// checkout pre-emptively. ₦2490 = 249000 kobo.
+export const MAX_ORDER_TOTAL_KOBO = 249000;
+
 export const formatNGN = (kobo: number): string => {
   const naira = kobo / 100;
   return new Intl.NumberFormat('en-NG', {
