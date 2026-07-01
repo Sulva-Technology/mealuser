@@ -25,9 +25,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
     cart,
     addToCart,
     addItemsToCart,
-    updateCartItemQuantity,
     updateCartItemSpoons,
-    removeFromCart,
     clearCart,
     navigateTo,
     favoriteItemIds,
@@ -152,28 +150,6 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
 
   const categories = Array.from(new Set(menuItems.map(item => item.category)));
 
-  const handleStepAdd = (item: MenuItem) => {
-    const existing = cartItemsMap[item.id];
-    if (cart && cart.vendorId !== vendorId) {
-      setPendingCartItem({ vId: vendorId, item: { menuItemId: item.id, quantity: 1, spoonsCount: 1 } });
-      setShowReplaceCartModal(true);
-      return;
-    }
-    if (existing) {
-      updateCartItemQuantity(item.id, existing.quantity + 1);
-    } else {
-      addToCart(vendorId, { menuItemId: item.id, quantity: 1, spoonsCount: 1 });
-    }
-  };
-
-  const handleStepSubtract = (item: MenuItem) => {
-    const existing = cartItemsMap[item.id];
-    if (existing) {
-      if (existing.quantity <= 1) removeFromCart(item.id);
-      else updateCartItemQuantity(item.id, existing.quantity - 1);
-    }
-  };
-
   // Commit the staged multi-select form to the cart. If a cart from another vendor
   // exists, defer to the replace-cart confirmation first.
   const handleAddSelected = () => {
@@ -283,46 +259,65 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
             </div>
           </section>
 
-          {/* Menu items grouped by category */}
+          {/* Menu items grouped by category — multi-select order form */}
           {menuItems.length === 0 ? (
             <div className="text-center py-12 bg-white rounded-2xl border border-emerald-deep/8">
               <p className="text-sm font-bold text-emerald-strong">No menu items available for this vendor yet.</p>
             </div>
           ) : (
-            <section className="space-y-8" id="menu_items_stage">
+            <form
+              className="space-y-8"
+              id="menu_items_stage"
+              onSubmit={(e) => { e.preventDefault(); handleAddSelected(); }}
+            >
+              <div className="flex items-center gap-2 text-[11px] text-muted-grey bg-emerald-deep/5 border border-emerald-deep/10 rounded-xl px-3.5 py-2.5">
+                <Check className="w-4 h-4 text-emerald-deep shrink-0" />
+                <span>Tick every dish you want, set its quantity, then add them all to your cart in one go.</span>
+              </div>
+
               {categories.map(category => {
                 const items = menuItems.filter(mi => mi.category === category);
                 return (
-                  <div key={category}>
-                    <h3 className="font-display font-medium text-xs tracking-widest text-emerald-strong bg-emerald-deep/5 px-2.5 py-1 rounded inline-block uppercase mb-4">
+                  <fieldset key={category}>
+                    <legend className="font-display font-medium text-xs tracking-widest text-emerald-strong bg-emerald-deep/5 px-2.5 py-1 rounded uppercase mb-4">
                       {category}
-                    </h3>
+                    </legend>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2.5">
                       {items.map(item => {
                         const activeInCart = cartItemsMap[item.id];
                         const isFav = favoriteItemIds?.includes(item.id);
                         const { avg, count } = getItemRatingStats(item.id);
+                        const isSelected = item.id in selection;
+                        const selQty = selection[item.id] ?? 1;
 
                         return (
                           <div
                             key={item.id}
-                            className="bg-white rounded-2xl border border-emerald-deep/6 p-4 flex gap-4 shadow-xs hover:border-emerald-deep/15 transition relative animate-fade-in"
-                            id={`menu_item_card_${item.id}`}
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={isSelected}
+                            onClick={() => toggleSelect(item.id)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSelect(item.id); } }}
+                            className={`rounded-2xl border p-3.5 flex gap-3.5 shadow-xs transition relative animate-fade-in cursor-pointer ${isSelected ? 'border-emerald-deep ring-1 ring-emerald-deep/30 bg-emerald-deep/[0.03]' : 'bg-white border-emerald-deep/6 hover:border-emerald-deep/15'}`}
+                            id={`menu_item_row_${item.id}`}
                           >
-                            <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-neutral-100 relative">
-                              <img src={resolveImage(item.imageUrl, item.name)} onError={handleImageError(item.name)} alt={item.name} className="w-full h-full object-cover" />
-                              {activeInCart && (
-                                <div className="absolute inset-0 bg-emerald-strong/20 backdrop-blur-xs flex items-center justify-center text-white" />
-                              )}
+                            {/* Selection checkbox */}
+                            <div className={`mt-0.5 w-5 h-5 rounded-md border shrink-0 flex items-center justify-center transition ${isSelected ? 'bg-emerald-deep border-emerald-deep text-white' : 'bg-white border-emerald-deep/25'}`}>
+                              {isSelected && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
                             </div>
 
-                            <div className="flex-1 flex flex-col justify-between">
+                            <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-neutral-100 relative">
+                              <img src={resolveImage(item.imageUrl, item.name)} onError={handleImageError(item.name)} alt={item.name} className="w-full h-full object-cover" />
+                            </div>
+
+                            <div className="flex-1 min-w-0 flex flex-col justify-between gap-1.5">
                               <div>
                                 <div className="flex items-start justify-between gap-2">
                                   <h4 className="font-display font-bold text-xs text-emerald-strong leading-normal">{item.name}</h4>
-                                  <div className="flex items-center gap-1.5 shrink-0">
+                                  <div className="flex items-center gap-1 shrink-0">
                                     <button
+                                      type="button"
                                       onClick={(e) => { e.stopPropagation(); toggleFavoriteItem(item.id); }}
                                       className={`p-1 rounded-md transition cursor-pointer ${isFav ? 'text-rose-500 hover:text-rose-600' : 'text-neutral-400 hover:text-rose-500'}`}
                                       title={isFav ? 'Remove from Favorites' : 'Save to Favorites'}
@@ -331,46 +326,44 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
                                       <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-rose-500' : ''}`} />
                                     </button>
                                     <button
-                                      onClick={() => handleOpenItemDetail(item)}
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); handleOpenItemDetail(item); }}
                                       className="text-muted-grey hover:text-emerald-deep p-1 rounded-md transition cursor-pointer"
-                                      title="More details"
+                                      title="More details, nutrition & spoons"
                                     >
                                       <Info className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
                                 </div>
-                                <p className="text-[10px] text-muted-grey line-clamp-2 mt-1 leading-relaxed">{item.description}</p>
+                                <p className="text-[10px] text-muted-grey line-clamp-1 mt-0.5 leading-relaxed">{item.description}</p>
 
                                 {count > 0 && (
-                                  <div className="flex items-center gap-1.5 mt-2">
-                                    <div className="flex items-center gap-0.5">
-                                      {[1, 2, 3, 4, 5].map((star) => (
-                                        <Star key={star} className={`w-3.5 h-3.5 ${star <= Math.round(avg) ? 'text-mango-warm fill-mango-warm' : 'text-neutral-200 fill-neutral-200'}`} />
-                                      ))}
-                                    </div>
+                                  <div className="flex items-center gap-1 mt-1">
+                                    <Star className="w-3 h-3 text-mango-warm fill-mango-warm" />
                                     <span className="text-[10px] font-bold text-ink-deep leading-none">{avg}</span>
-                                    <span className="text-[9px] text-muted-grey font-medium leading-none">({count} ratings)</span>
+                                    <span className="text-[9px] text-muted-grey font-medium leading-none">({count})</span>
                                   </div>
                                 )}
                               </div>
 
-                              <div className="flex items-center justify-between mt-3">
-                                <Currency kobo={item.priceKobo} className="text-xs text-ink-deep" />
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Currency kobo={item.priceKobo} className="text-xs text-ink-deep" />
+                                  {activeInCart && (
+                                    <span className="text-[8.5px] font-black uppercase tracking-wide text-emerald-strong bg-emerald-deep/10 px-1.5 py-0.5 rounded shrink-0">In cart · {activeInCart.quantity}</span>
+                                  )}
+                                </div>
 
-                                {activeInCart ? (
-                                  <div className="flex items-center gap-2 bg-emerald-deep/5 border border-emerald-deep/12 rounded-lg p-1">
-                                    <button onClick={() => handleStepSubtract(item)} className="w-6 h-6 rounded-md hover:bg-emerald-deep/10 text-emerald-strong flex items-center justify-center cursor-pointer transition" id={`step_sub_${item.id}`}>
+                                {isSelected && (
+                                  <div className="flex items-center gap-1.5 bg-emerald-deep/5 border border-emerald-deep/12 rounded-lg p-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    <button type="button" onClick={() => setSelectionQty(item.id, selQty - 1)} className="w-6 h-6 rounded-md hover:bg-emerald-deep/10 text-emerald-strong flex items-center justify-center cursor-pointer transition" id={`sel_sub_${item.id}`} aria-label="Decrease quantity">
                                       <Minus className="w-3.5 h-3.5" />
                                     </button>
-                                    <span className="text-xs font-bold font-mono text-emerald-strong px-1.5">{activeInCart.quantity}</span>
-                                    <button onClick={() => handleStepAdd(item)} className="w-6 h-6 rounded-md hover:bg-emerald-deep/10 text-emerald-strong flex items-center justify-center cursor-pointer transition" id={`step_add_${item.id}`}>
+                                    <span className="text-xs font-bold font-mono text-emerald-strong px-1 min-w-5 text-center">{selQty}</span>
+                                    <button type="button" onClick={() => setSelectionQty(item.id, selQty + 1)} className="w-6 h-6 rounded-md hover:bg-emerald-deep/10 text-emerald-strong flex items-center justify-center cursor-pointer transition" id={`sel_add_${item.id}`} aria-label="Increase quantity">
                                       <Plus className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
-                                ) : (
-                                  <button onClick={() => handleStepAdd(item)} className="bg-emerald-deep hover:bg-emerald-strong text-white rounded-lg p-1 px-3.5 text-[10px] font-bold cursor-pointer transition shadow-sm hover:scale-[1.01] active:scale-95 flex items-center gap-1" id={`quick_add_${item.id}`}>
-                                    <Plus className="w-3.5 h-3.5" /> Quick Add
-                                  </button>
                                 )}
                               </div>
                             </div>
@@ -378,10 +371,26 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
                         );
                       })}
                     </div>
-                  </div>
+                  </fieldset>
                 );
               })}
-            </section>
+
+              {/* Single add-all submit for the whole selection */}
+              <button
+                type="submit"
+                disabled={selectedCount === 0}
+                className="w-full py-3.5 bg-emerald-deep hover:bg-emerald-strong disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs rounded-2xl shadow-lg shadow-emerald-deep/20 transition active:scale-[0.99] cursor-pointer flex items-center justify-center gap-2"
+                id="add_selected_to_cart_btn"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                {selectedCount === 0
+                  ? 'Select dishes to add'
+                  : `Add ${selectedCount} ${selectedCount === 1 ? 'dish' : 'dishes'} to cart`}
+              </button>
+
+              {/* Spacer so the fixed cart panel / bottom nav never hides the submit */}
+              <div className="h-28" />
+            </form>
           )}
         </>
       )}
