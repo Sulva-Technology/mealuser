@@ -26,6 +26,7 @@ export interface MenuItem {
   imageUrl: string;
   category: string;
   availableQuantity: number;
+  vendorId: string;
 }
 
 export interface Vendor {

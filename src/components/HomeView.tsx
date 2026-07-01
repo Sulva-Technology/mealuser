@@ -8,23 +8,15 @@ import { AppShell, GlassPanel, Currency, Skeleton } from './CommonUI';
 import { PullToRefresh } from './PullToRefresh';
 import {
   Calendar,
-  Clock,
   MapPin,
   Store,
   ChevronRight,
-  TrendingUp,
-  TrendingDown,
-  ArrowUp,
-  ArrowDown,
   AlertCircle,
-  CheckCircle,
-  HelpCircle,
-  Timer,
-  Bike,
-  Sliders,
   Bookmark,
   Heart,
-  Plus
+  Plus,
+  Star,
+  Flame
 } from 'lucide-react';
 
 export const HomeView: React.FC = () => {
@@ -55,14 +47,6 @@ export const HomeView: React.FC = () => {
   // Selected date state
   const [tempDate, setTempDate] = useState(currentDate);
 
-  // Delivery Estimation sliders (real-time calculations)
-  const [orderVolume, setOrderVolume] = useState(24);
-  const [driverProximity, setDriverProximity] = useState(1.4);
-
-  // Setup delivery trend states
-  const [prevMinutes, setPrevMinutes] = useState(33);
-  const [trend, setTrend] = useState<'improving' | 'worsening' | 'stable'>('stable');
-
   // Simulated API loading state
   const [isLoading, setIsLoading] = useState(true);
 
@@ -83,25 +67,24 @@ export const HomeView: React.FC = () => {
     o.status !== 'CONFIRMED' && o.status !== 'CANCELLED' && o.status !== 'REFUNDED'
   );
 
-  // Estimation Arithmetic:
-  // Base kitchen prep is 15 minutes
-  // Each order volume adds 0.5 minutes queue delay
-  // Driver proximity adds 4 minutes per kilometer
-  const basePrep = 15;
-  const queueTime = Math.round(orderVolume * 0.5);
-  const transitTime = Math.round(driverProximity * 4);
-  const totalMinutes = basePrep + queueTime + transitTime;
+  // Top 3 kitchens by rating — the first thing a hungry student wants to see.
+  const topVendors = [...VENDORS].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)).slice(0, 3);
 
-  useEffect(() => {
-    if (totalMinutes < prevMinutes) {
-      setTrend('improving');
-    } else if (totalMinutes > prevMinutes) {
-      setTrend('worsening');
-    } else {
-      setTrend('stable');
-    }
-    setPrevMinutes(totalMinutes);
-  }, [totalMinutes]);
+  // Most-ordered dishes across every vendor, aggregated from this student's order
+  // history (order items already carry name + price, so this needs no menu lookup).
+  const dishTally = new Map<string, { menuItemId: string; name: string; priceKobo: number; vendorId: string; qty: number }>();
+  orders.forEach(o =>
+    o.items.forEach(it => {
+      const existing = dishTally.get(it.menuItemId);
+      if (existing) existing.qty += it.quantity;
+      else dishTally.set(it.menuItemId, { menuItemId: it.menuItemId, name: it.name, priceKobo: it.priceKobo, vendorId: o.vendorId, qty: it.quantity });
+    })
+  );
+  const topDishes = Array.from(dishTally.values()).sort((a, b) => b.qty - a.qty).slice(0, 4);
+
+  // Favorited dishes that actually resolve in the loaded catalog. Driving the tab
+  // count off this list keeps the badge and the rendered cards in agreement.
+  const favoriteItems = MENU_ITEMS.filter(it => favoriteItemIds?.includes(it.id));
 
   const handleSlotSelect = (slotId: string) => {
     setCurrentDateTimeLocation(currentDate, slotId, activeLocId);
@@ -241,139 +224,116 @@ export const HomeView: React.FC = () => {
         </section>
       )}
 
-      {/* Real-time Delivery & Dispatch Estimator Dashboard */}
-      <section className="mb-8" id="delivery_estimator_widget">
+      {/* Discovery: top-rated kitchens + most-ordered dishes */}
+      <section className="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-6" id="home_highlights">
+        {/* Top Rated Kitchens */}
         <GlassPanel className="p-6">
-          <div className="flex flex-col lg:flex-row gap-6">
-            {/* Left sliders control */}
-            <div className="flex-1 space-y-5">
-              <div>
-                <h3 className="font-display font-medium text-sm text-ink-deep font-bold flex items-center gap-1.5">
-                  <Sliders className="w-4.5 h-4.5 text-emerald-deep" />
-                  <span>Live Dispatch Health & Arrival Estimator</span>
-                </h3>
-                <p className="text-[10px] text-muted-grey mt-0.5">
-                  Calculates exact meal transit times based on active campus volume and rider distance. Try adjusting the sliders below!
-                </p>
-              </div>
-
-              {/* Slider 1: Order Volume */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-strong">
-                  <span className="flex items-center gap-1">
-                    <TrendingUp className="w-3.5 h-3.5 text-emerald-deep" />
-                    <span>Active Campus Orders (Dispatch Load)</span>
-                  </span>
-                  <span className="font-mono bg-white border border-emerald-deep/12 rounded px-1.5 py-0.2">
-                    {orderVolume} orders active
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="5"
-                  max="60"
-                  value={orderVolume}
-                  onChange={(e) => setOrderVolume(Number(e.target.value))}
-                  className="w-full accent-emerald-deep h-1.5 bg-neutral-100 rounded-lg appearance-auto cursor-pointer"
-                />
-                <div className="text-[9px] text-muted-grey font-semibold">
-                  {orderVolume < 20 ? (
-                    <span className="text-emerald-deep">📗 Highly Fluid • Quick kitchen turnaround</span>
-                  ) : orderVolume <= 40 ? (
-                    <span className="text-mango-warm">📙 Steady Volume • Moderate queuing delay</span>
-                  ) : (
-                    <span className="text-red-500 animate-pulse">⚠️ Peak Rush Congestion • Standard queuing rules apply</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Slider 2: Driver Proximity */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-strong">
-                  <span className="flex items-center gap-1">
-                    <Bike className="w-3.5 h-3.5 text-emerald-deep" />
-                    <span>Nearest Courier Proximity</span>
-                  </span>
-                  <span className="font-mono bg-white border border-emerald-deep/12 rounded px-1.5 py-0.2">
-                    {driverProximity} km away
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0.2"
-                  max="5.0"
-                  step="0.1"
-                  value={driverProximity}
-                  onChange={(e) => setDriverProximity(Number(e.target.value))}
-                  className="w-full accent-emerald-deep h-1.5 bg-neutral-100 rounded-lg appearance-auto cursor-pointer"
-                />
-                <div className="text-[9px] text-muted-grey font-semibold">
-                  {driverProximity < 1.5 ? (
-                    <span className="text-emerald-strong">📍 Immediate Hall Gateway (~{transitTime} mins travel)</span>
-                  ) : driverProximity <= 3.5 ? (
-                    <span className="text-emerald-strong">📍 In-Transit (Inter-campus roads, ~{transitTime} mins travel)</span>
-                  ) : (
-                    <span className="text-emerald-strong">📍 Far Campus Gateways (~{transitTime} mins travel)</span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Right calculated outcomes circle & vector map trail */}
-            <div className="w-full lg:w-72 bg-[#10231C]/5 border border-emerald-deep/8 p-5 rounded-[24px] flex flex-col justify-between gap-4">
-              <div className="text-center">
-                <span className="text-[9px] font-bold text-muted-grey block uppercase tracking-widest">Estimated Campus Wait</span>
-                <div className="flex items-center justify-center gap-2 mt-1">
-                  <Clock className="w-5 h-5 text-mango-warm fill-mango-warm/10 animate-pulse shrink-0" />
-                  <span className="text-2xl font-black text-emerald-strong select-all">
-                    ~{totalMinutes}<span className="text-sm font-bold">m</span>
-                  </span>
-
-                  {/* Real-time slider trend arrow indicator */}
-                  {trend === 'improving' && (
-                    <span className="inline-flex items-center gap-0.5 glass-pill text-success border border-success/30 text-[10px] font-bold px-1.5 py-0.5 rounded-md animate-bounce" title="Delivery parameters are currently improving">
-                      <ArrowUp className="w-3 h-3 stroke-[3]" />
-                      <span>Faster</span>
-                    </span>
-                  )}
-                  {trend === 'worsening' && (
-                    <span className="inline-flex items-center gap-0.5 bg-danger/10 text-danger border border-danger/20 text-[10px] font-bold px-1.5 py-0.5 rounded-md animate-pulse" title="Delivery parameters are currently worsening">
-                      <ArrowDown className="w-3 h-3 stroke-[3]" />
-                      <span>Slower</span>
-                    </span>
-                  )}
-                  {trend === 'stable' && (
-                    <span className="inline-flex items-center gap-0.5 bg-neutral-100 text-muted-grey border border-neutral-200 text-[9px] font-bold px-1.5 py-0.5 rounded-md" title="Steady delivery state">
-                      <span>Stable</span>
-                    </span>
-                  )}
-                </div>
-                <p className="text-[9.5px] text-muted-grey mt-1">Estimated delivery countdown window</p>
-              </div>
-
-              {/* Visual Roadway track */}
-              <div className="bg-white p-3 rounded-xl border border-emerald-deep/6 relative overflow-hidden">
-                <div className="flex items-center justify-between text-[8px] font-bold text-muted-grey mb-1 uppercase tracking-wider">
-                  <span>Kitchen Hub</span>
-                  <span>Your Desk</span>
-                </div>
-                {/* Horizontal road track */}
-                <div className="h-1.5 bg-neutral-100 rounded-full relative w-full my-2.5">
-                  {/* Active Rider Position Dot */}
-                  <div
-                    style={{ left: `${Math.max(0, Math.min(92, 100 - (driverProximity / 5.0) * 100))}%` }}
-                    className="absolute -top-1.5 w-4.5 h-4.5 rounded-full bg-emerald-deep text-white flex items-center justify-center shadow shadow-emerald-deep/30 transition-all duration-300"
-                  >
-                    <Bike className="w-3 h-3 text-white" />
-                  </div>
-                </div>
-                <div className="flex items-baseline justify-between text-[8.5px] font-semibold text-muted-grey mt-1">
-                  <span>Kitchen: {basePrep}m + Queue: {queueTime}m</span>
-                  <span>Rider travel: {transitTime}m</span>
-                </div>
-              </div>
-            </div>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-display font-bold text-sm text-emerald-strong flex items-center gap-1.5">
+              <Star className="w-4.5 h-4.5 text-mango-warm fill-mango-warm/30" />
+              <span>Top Rated Kitchens</span>
+            </h3>
+            <button
+              onClick={() => navigateTo('/vendors')}
+              className="text-[10px] font-black tracking-widest text-emerald-deep uppercase hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <span>All</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
+
+          {isLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}
+            </div>
+          ) : topVendors.length === 0 ? (
+            <p className="text-xs text-muted-grey py-6 text-center">No kitchens available yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {topVendors.map((v, idx) => (
+                <button
+                  key={v.id}
+                  onClick={() => navigateTo(`/vendors/${v.id}`)}
+                  className="w-full flex items-center gap-3 p-2.5 bg-white border border-ink-deep/5 rounded-2xl hover:border-emerald-deep/40 hover:shadow-sm transition text-left cursor-pointer active:scale-[0.99]"
+                >
+                  <span className={`shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-black ${
+                    idx === 0 ? 'bg-mango-warm text-emerald-strong' : 'bg-emerald-deep/10 text-emerald-deep'
+                  }`}>
+                    {idx + 1}
+                  </span>
+                  <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0 bg-neutral-50">
+                    <img
+                      src={resolveImage(v.imageUrl, v.name)}
+                      onError={handleImageError(v.name)}
+                      alt={v.name}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-display font-bold text-xs text-ink-deep truncate">{v.name}</h4>
+                    <p className="text-[10px] text-muted-grey truncate">{v.description}</p>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-ink-deep">
+                    <Star className="w-3.5 h-3.5 text-mango-warm fill-mango-warm" />
+                    <span className="numeric-tabular">{(v.rating ?? 0).toFixed(1)}</span>
+                    <span className="text-muted-grey font-semibold">({v.reviewCount})</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </GlassPanel>
+
+        {/* Most Ordered Dishes (across all vendors) */}
+        <GlassPanel className="p-6">
+          <h3 className="font-display font-bold text-sm text-emerald-strong flex items-center gap-1.5 mb-4">
+            <Flame className="w-4.5 h-4.5 text-mango-warm" />
+            <span>Most Ordered Dishes</span>
+          </h3>
+
+          {topDishes.length === 0 ? (
+            <div className="text-center py-6 flex flex-col items-center gap-2">
+              <Flame className="w-8 h-8 text-neutral-200" />
+              <p className="text-xs text-muted-grey max-w-xs">
+                Your most-ordered meals will appear here once you start placing orders.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {topDishes.map((dish, idx) => {
+                const vendorObj = VENDORS.find(v => v.id === dish.vendorId);
+                return (
+                  <button
+                    key={dish.menuItemId}
+                    onClick={() => dish.vendorId && navigateTo(`/vendors/${dish.vendorId}`)}
+                    className="w-full flex items-center gap-3 p-2.5 bg-white border border-ink-deep/5 rounded-2xl hover:border-emerald-deep/40 hover:shadow-sm transition text-left cursor-pointer active:scale-[0.99]"
+                  >
+                    <span className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-black bg-emerald-deep/10 text-emerald-deep">
+                      {idx + 1}
+                    </span>
+                    <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0 bg-neutral-50">
+                      <img
+                        src={resolveImage('', dish.name)}
+                        onError={handleImageError(dish.name)}
+                        alt={dish.name}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-display font-bold text-xs text-ink-deep truncate">{dish.name}</h4>
+                      <p className="text-[10px] text-emerald-deep font-bold truncate">at {vendorObj?.name || 'Kitchen partner'}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <Currency kobo={dish.priceKobo} className="text-xs font-extrabold text-ink-deep block" />
+                      <span className="text-[9px] font-bold text-muted-grey">Ordered ×{dish.qty}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </GlassPanel>
       </section>
 
@@ -462,7 +422,7 @@ export const HomeView: React.FC = () => {
             id="favorite_dishes_tab_btn"
           >
             <Heart className="w-4 h-4 fill-rose-500 text-rose-500 animate-pulse" />
-            <span>Saved Favorites ({favoriteItemIds?.length || 0})</span>
+            <span>Saved Favorites ({favoriteItems.length})</span>
           </button>
         </div>
 
@@ -579,7 +539,12 @@ export const HomeView: React.FC = () => {
         ) : (
           /* Favorites Tab renderer */
           <div>
-            {MENU_ITEMS.filter(it => favoriteItemIds?.includes(it.id)).length === 0 ? (
+            {favoriteItems.length === 0 && MENU_ITEMS.length === 0 && (favoriteItemIds?.length || 0) > 0 ? (
+              /* Catalog still loading — don't flash "empty" while saved favorites resolve */
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2].map(i => <Skeleton key={i} className="h-28 w-full rounded-[20px]" />)}
+              </div>
+            ) : favoriteItems.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-rose-200/60 p-6 flex flex-col items-center justify-center">
                 <Heart className="w-12 h-12 text-rose-300 stroke-[1.5] mb-3 animate-pulse" />
                 <h4 className="font-display font-bold text-sm text-ink-deep mb-1">Your Favorites Tab is Empty</h4>
@@ -587,14 +552,8 @@ export const HomeView: React.FC = () => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {MENU_ITEMS.filter(it => favoriteItemIds?.includes(it.id)).map(item => {
-                  const itemVendorId = item.id.startsWith('item_grill') 
-                    ? 'ven_grill' 
-                    : item.id.startsWith('item_bistro') 
-                      ? 'ven_bistro' 
-                      : item.id.startsWith('item_bake')
-                        ? 'ven_bake'
-                        : 'ven_akara';
+                {favoriteItems.map(item => {
+                  const itemVendorId = item.vendorId;
                   const vendorObj = VENDORS.find(v => v.id === itemVendorId);
                   const activeInCart = cart && cart.vendorId === itemVendorId 
                     ? cart.items.find(it => it.menuItemId === item.id) 

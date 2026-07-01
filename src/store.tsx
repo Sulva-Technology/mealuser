@@ -522,7 +522,7 @@ export function mapVendor(raw: any): Vendor {
 }
 
 // Normalize a backend menu item (MenuItemDto) into the client MenuItem shape
-export function mapMenuItem(raw: any): MenuItem {
+export function mapMenuItem(raw: any, vendorId?: string): MenuItem {
   return {
     id: raw.id,
     name: raw.name,
@@ -530,7 +530,8 @@ export function mapMenuItem(raw: any): MenuItem {
     priceKobo: raw.priceKobo,
     imageUrl: raw.imageUrl || '',
     category: raw.categoryName || raw.category || 'General',
-    availableQuantity: raw.remainingQuantity ?? raw.availableQuantity ?? 0
+    availableQuantity: raw.remainingQuantity ?? raw.availableQuantity ?? 0,
+    vendorId: raw.vendorId ?? vendorId ?? ''
   };
 }
 
@@ -650,6 +651,26 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     localStorage.setItem('md_saved_location_ids', JSON.stringify(savedLocationIds));
     localStorage.setItem('md_favorite_item_ids', JSON.stringify(favoriteItemIds));
   }, [user, cart, orders, notifications, escalations, reviews, menuItemReviews, savedLocationIds, favoriteItemIds]);
+
+  // Resume a Paystack checkout on return. payOrder() stashes the pending order id
+  // before redirecting out to Paystack; when the user comes back to the app we send
+  // them to the payment-status screen, whose poll triggers the backend's active
+  // verify (so a paid order stops showing "pending" even when no webhook reached us).
+  useEffect(() => {
+    if (!user?.id) return;
+    const raw = localStorage.getItem(PENDING_CHECKOUT_KEY);
+    if (!raw) return;
+    localStorage.removeItem(PENDING_CHECKOUT_KEY);
+    try {
+      const pending = JSON.parse(raw) as { orderId?: string };
+      if (pending?.orderId && !parseLocation().path.startsWith('/payment/status/')) {
+        navigateTo(`/payment/status/${pending.orderId}`);
+      }
+    } catch {
+      /* corrupt entry — already cleared */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // Synchronize orders, profile, notifications with backend session
   useEffect(() => {
@@ -800,13 +821,15 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const vendorList: Vendor[] = Array.isArray(vends) ? vends.map(mapVendor) : [];
         setVendors(vendorList);
 
-        // Aggregate menus across vendors so cart/checkout pricing + validation resolve
+        // Aggregate menus across vendors so cart/checkout pricing + validation resolve.
+        // Tag each item with its vendor id so favorites/most-ordered can resolve the vendor.
         const menusNested = await Promise.all(
-          vendorList.map(v =>
-            apiRequest(`/catalog/vendors/${v.id}/menu`, 'GET').catch(() => [])
-          )
+          vendorList.map(async v => {
+            const items = await apiRequest(`/catalog/vendors/${v.id}/menu`, 'GET').catch(() => []);
+            return Array.isArray(items) ? items.map((it: any) => mapMenuItem(it, v.id)) : [];
+          })
         );
-        const allItems = menusNested.flat().filter(Boolean).map(mapMenuItem);
+        const allItems = menusNested.flat();
         const deduped = Array.from(new Map(allItems.map(it => [it.id, it])).values());
         setMenuItems(deduped);
       }

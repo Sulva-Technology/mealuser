@@ -17,7 +17,11 @@ import {
   ChevronRight,
   ChevronLeft,
   Bike,
-  Eye
+  Eye,
+  XCircle,
+  CheckCircle2,
+  AlertTriangle,
+  Info
 } from 'lucide-react';
 import { formatNGN } from '../utils/helpers';
 
@@ -61,6 +65,50 @@ export const GlassPanel: React.FC<{
     >
       {children}
     </div>
+  );
+};
+
+// Centered message modal. Use for errors/alerts the user must see immediately —
+// especially actions triggered from a button low on the page, where an inline
+// banner would render off-screen and get missed.
+export type MessageModalVariant = 'error' | 'success' | 'warning' | 'info';
+
+export const MessageModal: React.FC<{
+  open: boolean;
+  message: string;
+  title?: string;
+  variant?: MessageModalVariant;
+  confirmLabel?: string;
+  onClose: () => void;
+}> = ({ open, message, title, variant = 'error', confirmLabel = 'Got it', onClose }) => {
+  if (!open) return null;
+
+  const theme = {
+    error: { Icon: XCircle, tint: 'bg-red-100 text-danger', heading: 'text-danger', btn: 'bg-danger hover:bg-red-700', title: 'Something went wrong' },
+    success: { Icon: CheckCircle2, tint: 'bg-emerald-deep/10 text-emerald-strong', heading: 'text-emerald-strong', btn: 'bg-emerald-deep hover:bg-emerald-strong', title: 'Success' },
+    warning: { Icon: AlertTriangle, tint: 'bg-amber-50 text-warning', heading: 'text-warning', btn: 'bg-emerald-deep hover:bg-emerald-strong', title: 'Heads up' },
+    info: { Icon: Info, tint: 'bg-emerald-deep/10 text-emerald-strong', heading: 'text-emerald-strong', btn: 'bg-emerald-deep hover:bg-emerald-strong', title: 'Notice' }
+  }[variant];
+  const { Icon } = theme;
+
+  return (
+    <dialog open className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-transparent backdrop:bg-black/85 backdrop:backdrop-blur-xs m-auto outline-none w-full h-full animate-fade-in">
+      <div className="bg-white rounded-3xl p-6 md:p-8 max-w-sm w-full border border-neutral-200 shadow-2xl flex flex-col items-center gap-5 text-center">
+        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${theme.tint}`}>
+          <Icon className="w-7 h-7" />
+        </div>
+        <div>
+          <h3 className={`font-display font-black text-lg ${theme.heading}`}>{title || theme.title}</h3>
+          <p className="text-xs text-muted-grey leading-relaxed mt-1.5">{message}</p>
+        </div>
+        <button
+          onClick={onClose}
+          className={`w-full py-3.5 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-sm ${theme.btn}`}
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    </dialog>
   );
 };
 

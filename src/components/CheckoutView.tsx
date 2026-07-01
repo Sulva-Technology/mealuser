@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useMealDirect } from '../store';
 import { formatNGN, MAX_ORDER_TOTAL_KOBO } from '../utils/helpers';
-import { AppShell, GlassPanel, Currency } from './CommonUI';
+import { AppShell, GlassPanel, Currency, MessageModal } from './CommonUI';
 import { ShieldCheck, ArrowRight, Loader2, Landmark, HelpCircle, MapPin, Clock, CreditCard, Lock, ClipboardList } from 'lucide-react';
 
 export const CheckoutView: React.FC = () => {
@@ -145,12 +145,14 @@ export const CheckoutView: React.FC = () => {
         </div>
       </section>
 
-      {errorMessage && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 text-xs text-danger font-semibold rounded-2xl flex items-start gap-2.5">
-          <ShieldCheck className="w-5 h-5 text-danger shrink-0 rotate-180" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
+      <MessageModal
+        open={!!errorMessage}
+        message={errorMessage || ''}
+        variant="error"
+        title="Checkout couldn't continue"
+        confirmLabel="Close"
+        onClose={() => setErrorMessage(null)}
+      />
 
       {isCreatingOrder ? (
         <div className="text-center py-16 bg-white rounded-3xl border border-emerald-deep/8 flex flex-col items-center justify-center p-6" id="order_creating_state">

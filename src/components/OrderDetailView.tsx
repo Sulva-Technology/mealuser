@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useMealDirect } from '../store';
-import { AppShell, GlassPanel, Currency, LoadingSkeleton } from './CommonUI';
+import { AppShell, GlassPanel, Currency, LoadingSkeleton, MessageModal } from './CommonUI';
 import { DeliveredAnimation } from './DeliveredAnimation';
 import { resolveImage, handleImageError } from '../utils/images';
 import { LiveTrackerPip } from './LiveTrackerPip';
@@ -189,11 +189,13 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
           <p className="text-xs text-muted-grey">Lodge structured query to the Venite Dispatch Operations center.</p>
         </section>
 
-        {actionError && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-xs text-danger font-semibold rounded-xl">
-            {actionError}
-          </div>
-        )}
+        <MessageModal
+          open={!!actionError}
+          message={actionError || ''}
+          variant="error"
+          confirmLabel="Close"
+          onClose={() => setActionError(null)}
+        />
 
         {escalateSubmitted ? (
           <GlassPanel className="p-8 text-center border-t-4 border-t-red-500 max-w-md mx-auto">
@@ -290,11 +292,13 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
           <p className="text-xs text-muted-grey">Your reviews grade partner scorecards directly for campus dispatch.</p>
         </section>
 
-        {actionError && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-xs text-danger font-semibold rounded-xl">
-            {actionError}
-          </div>
-        )}
+        <MessageModal
+          open={!!actionError}
+          message={actionError || ''}
+          variant="error"
+          confirmLabel="Close"
+          onClose={() => setActionError(null)}
+        />
 
         {reviewSubmitted ? (
           <GlassPanel className="p-8 text-center border-t-4 border-t-mango-warm max-w-md mx-auto">
@@ -377,11 +381,13 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
         />
       )}
 
-      {actionError && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-xs text-danger font-semibold rounded-xl">
-          {actionError}
-        </div>
-      )}
+      <MessageModal
+        open={!!actionError}
+        message={actionError || ''}
+        variant="error"
+        confirmLabel="Close"
+        onClose={() => setActionError(null)}
+      />
       <button
         onClick={() => navigateTo('/orders')}
         className="mb-4 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-deep hover:underline cursor-pointer"

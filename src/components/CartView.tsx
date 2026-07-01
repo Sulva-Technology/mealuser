@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useMealDirect } from '../store';
-import { AppShell, GlassPanel, Currency } from './CommonUI';
+import { AppShell, GlassPanel, Currency, MessageModal } from './CommonUI';
 import { resolveImage, handleImageError } from '../utils/images';
 import {
   Trash2,
@@ -231,12 +231,21 @@ export const CartView: React.FC = () => {
         </div>
       </section>
 
-      {(quoteError || errorMessage) && (
+      {quoteError && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 text-xs text-danger font-semibold rounded-2xl flex items-start gap-2 animate-fade-in">
           <AlertTriangle className="w-5 h-5 text-danger shrink-0" />
-          <span>{quoteError || errorMessage}</span>
+          <span>{quoteError}</span>
         </div>
       )}
+
+      <MessageModal
+        open={!!errorMessage}
+        message={errorMessage || ''}
+        variant="error"
+        title="Checkout couldn't continue"
+        confirmLabel="Close"
+        onClose={() => setErrorMessage(null)}
+      />
 
       {/* Main Core Elements */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="cart_workspace">

@@ -72,7 +72,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
     setIsLoading(true);
     apiRequest(`/catalog/vendors/${vendorId}/menu`, 'GET', null)
       .then(items => {
-        setMenuItems(Array.isArray(items) ? items.map(mapMenuItem) : []);
+        setMenuItems(Array.isArray(items) ? items.map((it: any) => mapMenuItem(it, vendorId)) : []);
         setIsLoading(false);
       })
       .catch(() => setIsLoading(false));

@@ -36,6 +36,27 @@ import {
 import { computeSpendHistory } from "../utils/helpers";
 import { AppShell, Currency, GlassPanel } from "./CommonUI";
 
+// In-app legal & security copy. Shown in a modal instead of linking off to a
+// separate website, so users never leave the app to read policy text.
+const LEGAL_CONTENT: Record<string, { title: string; body: string }> = {
+	terms: {
+		title: "Terms of Service",
+		body: "By using Meal Direct you agree to order in good faith, provide accurate delivery details, and pay for confirmed orders. Meal Direct connects you with campus vendors and dispatch riders; meal quality and timing are the vendor's responsibility, though we help mediate disputes. Orders may be cancelled or refunded through the support flow when a vendor cannot fulfil them. We may update these terms and will notify you of material changes in the app.",
+	},
+	privacy: {
+		title: "Privacy Policy",
+		body: "We collect only what we need to run your orders: your name, phone number, campus, delivery locations, and order history. This data is used to process orders, personalise your experience, and improve the service. We never sell your personal data, and we only share details with vendors and riders to the extent needed to complete a delivery. You can request account and data deletion at any time from this screen.",
+	},
+	security: {
+		title: "Data Protection & Security",
+		body: "Your payments and personal data are encrypted in transit and secured on our servers. Access to your account is protected by your login, and active sessions can be ended by signing out. If you suspect unauthorised access, sign out on all devices and contact support immediately. You control your data: you can update your profile details here, or permanently delete your account and all associated data using the option below.",
+	},
+	community: {
+		title: "Community Guidelines",
+		body: "Meal Direct is a shared campus community. Treat vendors, riders, and fellow students with respect. Do not place fraudulent or prank orders, harass dispatch riders, or misuse the support and escalation tools. Accounts that abuse the platform may be suspended. Report any unsafe or abusive behaviour through the support channel so we can act on it.",
+	},
+};
+
 export const ProfileView: React.FC = () => {
 	const {
 		user,
@@ -118,6 +139,7 @@ export const ProfileView: React.FC = () => {
 	);
 	const [isSaving, setIsSaving] = useState(false);
 	const [showDeleteModal, setShowDeleteModal] = useState(false);
+	const [legalModal, setLegalModal] = useState<{ title: string; body: string } | null>(null);
 	const [msg, setMsg] = useState<{
 		type: "success" | "error";
 		txt: string;
@@ -1114,7 +1136,7 @@ export const ProfileView: React.FC = () => {
 				<div className="space-y-2">
 					<button
 						type="button"
-						onClick={() => window.open("https://mealdirect.com/terms", "_blank", "noopener,noreferrer")}
+						onClick={() => setLegalModal(LEGAL_CONTENT.terms)}
 						className="w-full flex items-center justify-between p-3.5 bg-white border border-emerald-deep/10 rounded-xl hover:bg-emerald-deep/5 transition cursor-pointer active:scale-95"
 					>
 						<div className="flex items-center gap-2.5">
@@ -1128,7 +1150,7 @@ export const ProfileView: React.FC = () => {
 
 					<button
 						type="button"
-						onClick={() => window.open("https://mealdirect.com/privacy", "_blank", "noopener,noreferrer")}
+						onClick={() => setLegalModal(LEGAL_CONTENT.privacy)}
 						className="w-full flex items-center justify-between p-3.5 bg-white border border-emerald-deep/10 rounded-xl hover:bg-emerald-deep/5 transition cursor-pointer active:scale-95"
 					>
 						<div className="flex items-center gap-2.5">
@@ -1142,6 +1164,7 @@ export const ProfileView: React.FC = () => {
 
 					<button
 						type="button"
+						onClick={() => setLegalModal(LEGAL_CONTENT.security)}
 						className="w-full flex items-center justify-between p-3.5 bg-white border border-emerald-deep/10 rounded-xl hover:bg-emerald-deep/5 transition cursor-pointer active:scale-95"
 					>
 						<div className="flex items-center gap-2.5">
@@ -1155,6 +1178,7 @@ export const ProfileView: React.FC = () => {
 
 					<button
 						type="button"
+						onClick={() => setLegalModal(LEGAL_CONTENT.community)}
 						className="w-full flex items-center justify-between p-3.5 bg-white border border-emerald-deep/10 rounded-xl hover:bg-emerald-deep/5 transition cursor-pointer active:scale-95"
 					>
 						<div className="flex items-center gap-2.5">
@@ -1236,6 +1260,24 @@ export const ProfileView: React.FC = () => {
 			</GlassPanel>
 
 			<div className="h-10" />
+
+			{/* Legal & Security text modal */}
+			{legalModal && (
+				<dialog open className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-transparent backdrop:bg-black/85 backdrop:backdrop-blur-xs m-auto outline-none w-full h-full animate-fade-in">
+					<div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full border border-neutral-200 shadow-2xl flex flex-col gap-5 relative max-h-[85vh]">
+						<h3 className="font-display font-black text-xl text-emerald-strong">{legalModal.title}</h3>
+						<p className="text-xs text-muted-grey leading-relaxed overflow-y-auto pr-1">
+							{legalModal.body}
+						</p>
+						<button
+							onClick={() => setLegalModal(null)}
+							className="w-full py-3.5 bg-emerald-deep hover:bg-emerald-strong text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-sm"
+						>
+							Close
+						</button>
+					</div>
+				</dialog>
+			)}
 
 			{/* Delete Account Modal */}
 			{showDeleteModal && (
