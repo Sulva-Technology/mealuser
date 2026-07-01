@@ -256,6 +256,23 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  // Forgot-password: forward the email to the backend, which sends a Supabase
+  // reset link. Non-enumerating (backend always 200s), so no session/cookies here.
+  app.post('/api/auth/password-reset', async (req, res) => {
+    try {
+      const backendResponse = await fetchImpl(`${backendUrl}/v1/auth/password-reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(req.body || {})
+      });
+      const json = await readBackendJson(backendResponse);
+      res.status(backendResponse.status).json(json);
+    } catch (error) {
+      console.error('Password-reset proxy failed:', error);
+      res.status(502).json({ error: { code: 'AUTH_PROXY_FAILED', message: 'Authentication service unavailable.' } });
+    }
+  });
+
   app.post('/api/auth/logout', async (req, res) => {
     const cookies = parseCookies(req.headers.cookie);
     try {

@@ -168,6 +168,7 @@ interface MealDirectContextType {
   onboardingData: { phone: string; campusId: string; locationId: string } | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
+  requestPasswordReset: (email: string) => Promise<void>;
   completeOnboarding: (fullName: string, phone: string, campusId: string, locationId: string) => Promise<void>;
   updateProfile: (fullName: string, phone: string, campusId: string, defaultLocationId: string) => Promise<void>;
   signOut: () => void;
@@ -898,6 +899,18 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
+  // Forgot-password: ask the backend to email a Supabase reset link. The backend
+  // is non-enumerating (always 200s whether or not the account exists), so a
+  // resolved promise just means "if that email has an account, a link is on its way".
+  const requestPasswordReset = async (email: string) => {
+    try {
+      await authRequest('/password-reset', 'POST', { email });
+    } catch (err: any) {
+      console.error(err);
+      throw new Error(err.message || 'Could not send reset email. Please try again.');
+    }
+  };
+
   const completeOnboarding = async (fullName: string, phone: string, campusId: string, locationId: string) => {
     if (!user) return;
 
@@ -1594,6 +1607,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         onboardingData,
         signIn,
         signUp,
+        requestPasswordReset,
         completeOnboarding,
         updateProfile,
         signOut,
