@@ -27,6 +27,27 @@ import { getToken, deleteToken, onMessage } from 'firebase/messaging';
 // Guard so repeated enable/disable cycles don't stack foreground listeners.
 let fcmForegroundBound = false;
 
+// Tokens minted before the FCM migration are stringified W3C PushSubscriptions
+// ('{"endpoint":"https://fcm.googleapis.com/fcm/send/..."}'). Their embedded
+// slashes break the DELETE-by-path route (→ 404), so they must never be sent to
+// the backend — detect and purge them client-side instead. Real FCM registration
+// tokens are opaque strings that never start with '{'.
+function isLegacyPushSubscriptionToken(t: string | null): boolean {
+  return !!t && t.trimStart().startsWith('{');
+}
+
+// Best-effort teardown of any native PushManager subscription left over from the
+// pre-FCM implementation, so the browser isn't holding a dead VAPID subscription.
+async function unsubscribeLegacyNativePush(): Promise<void> {
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration?.();
+    const sub = await reg?.pushManager?.getSubscription?.();
+    await sub?.unsubscribe();
+  } catch {
+    /* ignore — nothing to clean up */
+  }
+}
+
 // Must match the BFF mount in server.ts (app.use('/api/v1', ...)). A bare '/v1'
 // default hits no Express route → Vite returns 404 on every call.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -559,6 +580,17 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (saved) return JSON.parse(saved);
     return null;
   });
+
+  // One-time migration: drop any pre-FCM native PushSubscription token so it is
+  // never sent to the backend (it would 404 and wedge disable) and doesn't make
+  // the UI show push as "enabled". User can re-enable to mint a real FCM token.
+  useEffect(() => {
+    const stored = localStorage.getItem('md_device_token');
+    if (isLegacyPushSubscriptionToken(stored)) {
+      localStorage.removeItem('md_device_token');
+      void unsubscribeLegacyNativePush();
+    }
+  }, []);
 
   useEffect(() => {
     apiRequest('/me', 'GET')
@@ -1589,20 +1621,32 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const unregisterDeviceToken = async (): Promise<boolean> => {
-    try {
-      const token = localStorage.getItem('md_device_token');
-      if (!token) return false;
-      await apiRequest(`/me/device-tokens/${encodeURIComponent(token)}`, 'DELETE');
-      localStorage.removeItem('md_device_token');
-      // Invalidate the FCM token client-side so a later re-enable mints a fresh one.
-      const messaging = await getMessagingIfSupported();
-      if (messaging) await deleteToken(messaging).catch(() => {});
-      addNotification('Notifications Disabled', 'Push alerts were disabled for this browser.', 'general');
-      return true;
-    } catch (e) {
-      console.warn('Device token removal failed:', e);
-      return false;
+    const token = localStorage.getItem('md_device_token');
+    if (!token) return false;
+    // Clear local state first so a stale/unknown token can never wedge disable:
+    // the user's intent (stop push on this browser) is satisfied regardless of
+    // what the backend says.
+    localStorage.removeItem('md_device_token');
+
+    // Invalidate the FCM token client-side so a later re-enable mints a fresh one.
+    const messaging = await getMessagingIfSupported();
+    if (messaging) await deleteToken(messaging).catch(() => {});
+
+    if (isLegacyPushSubscriptionToken(token)) {
+      // Pre-FCM native subscription: don't call the backend (the slash-laden
+      // token 404s the DELETE route). Just tear down the browser subscription.
+      await unsubscribeLegacyNativePush();
+    } else {
+      try {
+        await apiRequest(`/me/device-tokens/${encodeURIComponent(token)}`, 'DELETE');
+      } catch (e) {
+        // 404 = backend already lacks it; any error here is non-fatal since we've
+        // already disabled locally and a dead token just fails silently on send.
+        console.warn('Backend device-token removal failed (cleared locally anyway):', e);
+      }
     }
+    addNotification('Notifications Disabled', 'Push alerts were disabled for this browser.', 'general');
+    return true;
   };
 
   // Notification actions
