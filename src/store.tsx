@@ -21,6 +21,11 @@ import {
 } from './types';
 import { triggerVibration, VIBE_PATTERNS } from './utils/vibe';
 import { setMonitoringUser } from './utils/monitoring';
+import { getMessagingIfSupported } from './utils/firebase';
+import { getToken, deleteToken, onMessage } from 'firebase/messaging';
+
+// Guard so repeated enable/disable cycles don't stack foreground listeners.
+let fcmForegroundBound = false;
 
 // Must match the BFF mount in server.ts (app.use('/api/v1', ...)). A bare '/v1'
 // default hits no Express route → Vite returns 404 on every call.
@@ -38,16 +43,6 @@ function readCookie(name: string): string | null {
     .split('; ')
     .find(part => part.startsWith(`${name}=`));
   return match ? decodeURIComponent(match.split('=').slice(1).join('=')) : null;
-}
-
-// Convert a base64url VAPID public key into the Uint8Array PushManager expects
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  const out = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  return out;
 }
 
 // Idempotency-Key for mutating POSTs so retries/double-clicks don't duplicate
@@ -1535,34 +1530,56 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     addNotification('Meal Feedback Logged ⭐', 'Thank you for sharing your feedback on this single meal helper item!', 'general');
   };
 
-  // Register this browser for web push (POST /v1/me/device-tokens).
-  // Requires a VAPID public key (VITE_VAPID_PUBLIC_KEY) + a service worker.
+  // Register this browser for web push via Firebase Cloud Messaging
+  // (POST /v1/me/device-tokens with the FCM registration token).
+  // Requires the FCM Web Push certificate key (VITE_VAPID_PUBLIC_KEY) + a service worker.
   // Non-fatal: returns false if unsupported/denied/unconfigured — polling stays the fallback.
   const registerDeviceToken = async (): Promise<boolean> => {
     try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+      if (!('serviceWorker' in navigator) || !('Notification' in window)) {
         return false;
       }
-      const vapid = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
-      if (!vapid) {
+      const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
+      if (!vapidKey) {
         console.warn('VITE_VAPID_PUBLIC_KEY not set — web push disabled, using polling.');
         return false;
       }
+      const messaging = await getMessagingIfSupported();
+      if (!messaging) return false;
+
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') return false;
 
-      const reg = await navigator.serviceWorker.register('/sw.js');
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapid)
+      // Register the FCM background service worker ourselves so getToken uses it
+      // (rather than the default it would fetch at the root scope).
+      const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      const token = await getToken(messaging, {
+        vapidKey,
+        serviceWorkerRegistration: swReg
       });
-      const token = JSON.stringify(sub);
+      if (!token) return false;
 
       await apiRequest('/me/device-tokens', 'POST', {
         token,
         platform: 'web'
       });
       localStorage.setItem('md_device_token', token);
+
+      // Surface pushes that arrive while the app is in the foreground (the SW's
+      // onBackgroundMessage only fires when backgrounded). Bind once per session.
+      if (!fcmForegroundBound) {
+        fcmForegroundBound = true;
+        onMessage(messaging, (payload) => {
+          const d = payload.data || {};
+          const n = payload.notification || {};
+          addNotification(
+            n.title || d.title || 'Meal Direct',
+            n.body || d.body || d.message || '',
+            'general'
+          );
+        });
+      }
+
       addNotification('Notifications Enabled 🔔', 'You will now get push alerts for order updates.', 'general');
       return true;
     } catch (e) {
@@ -1577,9 +1594,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (!token) return false;
       await apiRequest(`/me/device-tokens/${encodeURIComponent(token)}`, 'DELETE');
       localStorage.removeItem('md_device_token');
-      const reg = await navigator.serviceWorker?.getRegistration?.();
-      const sub = await reg?.pushManager.getSubscription();
-      await sub?.unsubscribe();
+      // Invalidate the FCM token client-side so a later re-enable mints a fresh one.
+      const messaging = await getMessagingIfSupported();
+      if (messaging) await deleteToken(messaging).catch(() => {});
       addNotification('Notifications Disabled', 'Push alerts were disabled for this browser.', 'general');
       return true;
     } catch (e) {

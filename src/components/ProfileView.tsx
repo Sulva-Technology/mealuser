@@ -97,14 +97,14 @@ export const ProfileView: React.FC = () => {
 		let cancelled = false;
 		(async () => {
 			try {
-				if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
+				if (!('serviceWorker' in navigator) || typeof Notification === 'undefined') {
 					return;
 				}
 				if (Notification.permission !== 'granted') return;
-				const reg = await navigator.serviceWorker.getRegistration();
-				const sub = await reg?.pushManager.getSubscription();
-				// Enabled only if we have a live subscription AND a token we sent to the backend.
-				if (!cancelled && sub && localStorage.getItem('md_device_token')) {
+				// Enabled only if permission is granted AND we hold an FCM token we sent to
+				// the backend. Firebase owns the underlying PushSubscription internally, so
+				// md_device_token is our source of truth for "registered on this browser".
+				if (!cancelled && localStorage.getItem('md_device_token')) {
 					setPushState('enabled');
 				}
 			} catch {
