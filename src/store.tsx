@@ -217,7 +217,7 @@ interface MealDirectContextType {
   // Orders
   orders: Order[];
   createOrder: (specialInstructions?: string, promotionCode?: string) => Promise<Order>;
-  registerDeviceToken: () => Promise<boolean>;
+  registerDeviceToken: (options?: { silent?: boolean }) => Promise<boolean>;
   unregisterDeviceToken: () => Promise<boolean>;
   payOrder: (orderId: string) => Promise<string>;
   refreshOrder: (orderId: string) => Promise<Order | null>;
@@ -726,6 +726,20 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     pullServerSync();
   }, [isOnline, user?.id]);
+
+  // Silently refresh the FCM token on login for browsers that already enabled
+  // push (permission granted + token previously registered). FCM tokens rotate,
+  // so without this a device goes stale until the user re-toggles in Profile.
+  // Never prompts: guarded on an existing grant.
+  useEffect(() => {
+    if (!user?.id) return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    if (!localStorage.getItem('md_device_token')) return;
+    registerDeviceToken({ silent: true }).catch((e) => {
+      console.warn('Silent device-token refresh failed:', e);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const toggleSaveLocation = (locationId: string) => {
     triggerVibration(VIBE_PATTERNS.MEDIUM);
@@ -1566,7 +1580,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // (POST /v1/me/device-tokens with the FCM registration token).
   // Requires the FCM Web Push certificate key (VITE_VAPID_PUBLIC_KEY) + a service worker.
   // Non-fatal: returns false if unsupported/denied/unconfigured — polling stays the fallback.
-  const registerDeviceToken = async (): Promise<boolean> => {
+  const registerDeviceToken = async (options?: { silent?: boolean }): Promise<boolean> => {
     try {
       if (!('serviceWorker' in navigator) || !('Notification' in window)) {
         return false;
@@ -1597,6 +1611,12 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       });
       localStorage.setItem('md_device_token', token);
 
+      // The backend only sends pushes when notification_preferences.push_enabled
+      // is true (defaults to false), so registering the token alone is not enough.
+      await apiRequest('/notifications/preferences', 'PUT', { pushEnabled: true }).catch((e) => {
+        console.warn('Could not enable push preference on backend:', e);
+      });
+
       // Surface pushes that arrive while the app is in the foreground (the SW's
       // onBackgroundMessage only fires when backgrounded). Bind once per session.
       if (!fcmForegroundBound) {
@@ -1612,7 +1632,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         });
       }
 
-      addNotification('Notifications Enabled 🔔', 'You will now get push alerts for order updates.', 'general');
+      if (!options?.silent) {
+        addNotification('Notifications Enabled 🔔', 'You will now get push alerts for order updates.', 'general');
+      }
       return true;
     } catch (e) {
       console.warn('Device token registration failed:', e);
