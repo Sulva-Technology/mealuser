@@ -174,11 +174,20 @@ function applySecurity(app: Express, backendUrl: string, isProd: boolean) {
             directives: {
               'default-src': ["'self'"],
               'base-uri': ["'self'"],
-              'connect-src': ["'self'", backendUrl, 'https://*.ingest.sentry.io', 'https://sentry.io'],
+              'connect-src': [
+                "'self'",
+                backendUrl,
+                'https://*.ingest.sentry.io',
+                'https://sentry.io',
+                // FCM getToken(): Installations + registration APIs (page and SW).
+                'https://fcmregistrations.googleapis.com',
+                'https://firebaseinstallations.googleapis.com'
+              ],
               'form-action': ["'self'", 'https://checkout.paystack.com'],
               'frame-src': ["'self'", 'https://checkout.paystack.com'],
               'img-src': ["'self'", 'data:', 'https:'],
-              'script-src': ["'self'", JSONLD_CSP_HASH],
+              // gstatic: the FCM background SW importScripts() the compat SDK.
+              'script-src': ["'self'", JSONLD_CSP_HASH, 'https://www.gstatic.com'],
               'style-src': ["'self'", "'unsafe-inline'"]
             }
           }

@@ -88,6 +88,48 @@ describe('backend contract mappers', () => {
   });
 });
 
+describe('CSP allows Firebase Cloud Messaging', () => {
+	// The FCM background SW importScripts() the compat SDK from gstatic, and
+	// getToken() in the page calls the Installations + FCM registration APIs.
+	// Both the Express prod CSP and the Vercel static-host CSP must allow them,
+	// or web push dies with "ServiceWorker script evaluation failed".
+	const FCM_CONNECT = [
+		'https://fcmregistrations.googleapis.com',
+		'https://firebaseinstallations.googleapis.com'
+	];
+
+	it('Express prod CSP permits gstatic scripts and FCM endpoints', async () => {
+		const app = createApp({
+			backendUrl: 'https://backend.test',
+			isProd: true,
+			fetchImpl: async () => jsonResponse({})
+		});
+		const res = await request(app).get('/healthz').expect(200);
+		const csp = String(res.headers['content-security-policy']);
+		const directive = (name: string) =>
+			csp.split(';').map(d => d.trim()).find(d => d.startsWith(name)) || '';
+		expect(directive('script-src')).toContain('https://www.gstatic.com');
+		for (const origin of FCM_CONNECT) {
+			expect(directive('connect-src')).toContain(origin);
+		}
+	});
+
+	it('vercel.json CSP permits gstatic scripts and FCM endpoints', async () => {
+		const { readFile } = await import('node:fs/promises');
+		const vercel = JSON.parse(await readFile(new URL('../../vercel.json', import.meta.url), 'utf8'));
+		const cspHeader = vercel.headers
+			.flatMap((h: { headers: Array<{ key: string; value: string }> }) => h.headers)
+			.find((h: { key: string }) => h.key === 'Content-Security-Policy');
+		const csp = String(cspHeader?.value || '');
+		const directive = (name: string) =>
+			csp.split(';').map(d => d.trim()).find(d => d.startsWith(name)) || '';
+		expect(directive('script-src')).toContain('https://www.gstatic.com');
+		for (const origin of FCM_CONNECT) {
+			expect(directive('connect-src')).toContain(origin);
+		}
+	});
+});
+
 describe('BFF auth and CSRF behavior', () => {
   it('sets HttpOnly auth cookies and a readable CSRF cookie on customer login', async () => {
     const app = createApp({
