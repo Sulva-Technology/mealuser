@@ -17,7 +17,8 @@ import {
   DeliverySlot,
   Vendor,
   MenuItem,
-  ServerQuote
+  ServerQuote,
+  PaymentStatusResult
 } from './types';
 import { triggerVibration, VIBE_PATTERNS } from './utils/vibe';
 import { setMonitoringUser } from './utils/monitoring';
@@ -26,6 +27,11 @@ import { getToken, deleteToken, onMessage } from 'firebase/messaging';
 
 // Guard so repeated enable/disable cycles don't stack foreground listeners.
 let fcmForegroundBound = false;
+
+// Module-level guard so a double-click / re-render can never fire two concurrent
+// checkout→pay flows (which would create two orders). Complements the backend
+// Idempotency-Key and the per-view "processing" disabled state.
+let checkoutInFlight = false;
 
 // Tokens minted before the FCM migration are stringified W3C PushSubscriptions
 // ('{"endpoint":"https://fcm.googleapis.com/fcm/send/..."}'). Their embedded
@@ -57,6 +63,16 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const PUBLIC_CATALOG_BASE = API_BASE === '/api/v1' ? '/api/public' : API_BASE;
 const AUTH_BASE = '/api/auth';
 const CSRF_COOKIE = 'md_csrf';
+export const MAX_AVATAR_UPLOAD_BYTES = 2 * 1024 * 1024;
+export const ALLOWED_AVATAR_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+
+type ApiRequestImpl = (
+  path: string,
+  method?: string,
+  body?: any,
+  token?: string | null,
+  extraHeaders?: Record<string, string>
+) => Promise<any>;
 
 function readCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
@@ -154,6 +170,53 @@ export async function apiRequest(path: string, method = 'GET', body: any = null,
   return unwrapEnvelope(json);
 }
 
+export function validateAvatarFile(file: Pick<File, 'type' | 'size'>): string | null {
+  if (!ALLOWED_AVATAR_CONTENT_TYPES.includes(file.type as typeof ALLOWED_AVATAR_CONTENT_TYPES[number])) {
+    return 'Avatar must be a JPEG, PNG, or WebP image.';
+  }
+  if (file.size > MAX_AVATAR_UPLOAD_BYTES) {
+    return 'Avatar image must be 2 MB or smaller.';
+  }
+  return null;
+}
+
+export async function uploadProfileAvatar(
+  file: File,
+  deps: { apiRequestImpl?: ApiRequestImpl; fetchImpl?: typeof fetch } = {}
+): Promise<UserProfile> {
+  const validationError = validateAvatarFile(file);
+  if (validationError) throw new Error(validationError);
+
+  const request = deps.apiRequestImpl || apiRequest;
+  const fetcher = deps.fetchImpl || fetch;
+  const signed = await request('/me/avatar/upload-url', 'POST', {
+    contentType: file.type,
+    sizeBytes: file.size
+  });
+  const uploadUrl = signed?.uploadUrl;
+  const key = signed?.key;
+  if (!uploadUrl || !key) {
+    throw new Error('Avatar upload URL was not returned by the server.');
+  }
+
+  const uploadResponse = await fetcher(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type },
+    body: file
+  });
+  if (!uploadResponse.ok) {
+    throw new Error(`Avatar upload failed with HTTP ${uploadResponse.status}.`);
+  }
+
+  const confirmed = await request('/me/avatar/confirm', 'POST', { key });
+  return mapMeSession(confirmed);
+}
+
+export function stripEphemeralUserProfileFields(user: UserProfile): UserProfile {
+  const { avatarUrl: _avatarUrl, ...persistable } = user;
+  return persistable;
+}
+
 // Anonymous catalog discovery (campus dispatch terminals + delivery slots).
 // These backend endpoints are public, but the authenticated apiRequest proxy attaches
 // the user's token, which makes the backend enforce campus membership and 403 during
@@ -187,6 +250,7 @@ interface MealDirectContextType {
   requestPasswordReset: (email: string) => Promise<void>;
   completeOnboarding: (fullName: string, phone: string, campusId: string, locationId: string) => Promise<void>;
   updateProfile: (fullName: string, phone: string, campusId: string, defaultLocationId: string) => Promise<void>;
+  uploadAvatar: (file: File) => Promise<void>;
   signOut: () => void;
 
   // Catalog
@@ -217,11 +281,12 @@ interface MealDirectContextType {
   // Orders
   orders: Order[];
   createOrder: (specialInstructions?: string, promotionCode?: string) => Promise<Order>;
+  checkoutAndPay: (specialInstructions?: string, promotionCode?: string) => Promise<{ order: Order; authorizationUrl: string }>;
   registerDeviceToken: (options?: { silent?: boolean }) => Promise<boolean>;
   unregisterDeviceToken: () => Promise<boolean>;
   payOrder: (orderId: string) => Promise<string>;
   refreshOrder: (orderId: string) => Promise<Order | null>;
-  fetchPaymentStatus: (orderId: string) => Promise<{ orderStatus: OrderStatus; paid: boolean; terminalFail: boolean } | null>;
+  fetchPaymentStatus: (orderId: string) => Promise<PaymentStatusResult | null>;
   confirmDelivery: (orderId: string) => Promise<void>;
   progressOrderStatus: (orderId: string) => void; // Pulls latest authoritative status from backend
   reorderOrder: (orderId: string) => void;
@@ -341,6 +406,7 @@ export function mapMeSession(raw: any): UserProfile {
     phone: profile.phoneNumber || raw?.phone || raw?.phoneNumber || '',
     campusId: profile.defaultCampusId || raw?.campusId || raw?.defaultCampusId || activeMembership?.campusId || '',
     defaultLocationId: profile.defaultLocationId || raw?.defaultLocationId || '',
+    avatarUrl: profile.avatarUrl || raw?.avatarUrl || actor.avatarUrl || undefined,
     isOnboarded: Boolean(profile.onboardingCompleted ?? raw?.isOnboarded ?? raw?.onboardingCompleted)
   };
 }
@@ -383,10 +449,11 @@ export function isPaymentConfirmed(payment: any): boolean {
   );
 }
 
-export function mapPaymentStatus(data: any): { orderStatus: OrderStatus; paid: boolean; terminalFail: boolean } {
+export function mapPaymentStatus(data: any): PaymentStatusResult {
   const orderStatus = normalizeStatus(data?.orderStatus);
-  const payStatus = (data?.payment?.status || '').toLowerCase();
-  const paymentConfirmed = isPaymentConfirmed(data?.payment);
+  const payment = data?.payment || null;
+  const payStatus = (payment?.status || '').toLowerCase();
+  const paymentConfirmed = isPaymentConfirmed(payment);
   const paid =
     paymentConfirmed ||
     (orderStatus !== 'PENDING_PAYMENT' && orderStatus !== 'CANCELLED' && orderStatus !== 'EXPIRED');
@@ -395,7 +462,16 @@ export function mapPaymentStatus(data: any): { orderStatus: OrderStatus; paid: b
   const terminalFail =
     !paymentConfirmed &&
     (orderStatus === 'CANCELLED' || orderStatus === 'EXPIRED' || payStatus === 'failed');
-  return { orderStatus, paid, terminalFail };
+  return {
+    orderStatus,
+    paid,
+    terminalFail,
+    reference: payment?.providerReference || undefined,
+    paidAmountKobo: typeof payment?.paidAmountKobo === 'number' ? payment.paidAmountKobo : undefined,
+    expectedAmountKobo: typeof payment?.expectedAmountKobo === 'number' ? payment.expectedAmountKobo : undefined,
+    paidAt: payment?.paidAt || payment?.verifiedAt || undefined,
+    rawPaymentStatus: payStatus || undefined
+  };
 }
 
 export function derivePaymentPollingState(args: {
@@ -577,7 +653,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const [user, setUser] = useState<UserProfile | null>(() => {
     const saved = localStorage.getItem('md_user');
-    if (saved) return JSON.parse(saved);
+    if (saved) return stripEphemeralUserProfileFields(JSON.parse(saved));
     return null;
   });
 
@@ -610,7 +686,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   useEffect(() => {
     if (user) {
-      localStorage.setItem('md_user', JSON.stringify(user));
+      localStorage.setItem('md_user', JSON.stringify(stripEphemeralUserProfileFields(user)));
       setMonitoringUser({ id: user.id, email: user.email });
     } else {
       localStorage.removeItem('md_user');
@@ -1030,6 +1106,12 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     addNotification('Profile Saved Successfully', 'Your contact phone number and preset dispatch terminal were updated.', 'general');
   };
 
+  const uploadAvatar = async (file: File): Promise<void> => {
+    const updatedUser = await uploadProfileAvatar(file);
+    setUser(prev => ({ ...(prev || updatedUser), ...updatedUser }));
+    addNotification('Profile Photo Updated', 'Your profile avatar was updated.', 'general');
+  };
+
   const signOut = () => {
     // Remember the current page so re-login returns the user here.
     saveReturnPath();
@@ -1344,6 +1426,36 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return normalized;
   };
 
+  // Single consolidated checkout path: validate → create order → initialize payment.
+  // This is the ONLY place the customer app turns a cart into a paid order, so there
+  // is one payment-initiation flow (no duplicated create+pay logic across screens).
+  // Guarded against concurrent invocation so a double-click can't create two orders.
+  const checkoutAndPay = async (
+    specialInstructions?: string,
+    promotionCode?: string
+  ): Promise<{ order: Order; authorizationUrl: string }> => {
+    if (checkoutInFlight) {
+      throw new Error('A checkout is already in progress. Please wait a moment.');
+    }
+    if (!cart || cart.items.length === 0) {
+      throw new Error('Your cart is empty. Add items before checking out.');
+    }
+    if (!user) {
+      throw new Error('Please sign in again to continue to payment.');
+    }
+    if (!isOnline) {
+      throw new Error('You appear to be offline. Reconnect to place your order.');
+    }
+    checkoutInFlight = true;
+    try {
+      const order = await createOrder(specialInstructions, promotionCode);
+      const authorizationUrl = await payOrder(order.id);
+      return { order, authorizationUrl };
+    } finally {
+      checkoutInFlight = false;
+    }
+  };
+
   // Initialize Paystack. Returns the hosted authorization URL to redirect to.
   // Does NOT mark the order paid — payment truth comes from the backend webhook,
   // surfaced via fetchPaymentStatus / refreshOrder after the user returns.
@@ -1400,7 +1512,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Poll-friendly payment status check against the authoritative backend
   const fetchPaymentStatus = async (
     orderId: string
-  ): Promise<{ orderStatus: OrderStatus; paid: boolean; terminalFail: boolean } | null> => {
+  ): Promise<PaymentStatusResult | null> => {
     try {
       const data = await apiRequest(`/orders/${orderId}/payment-status`, 'GET');
       if (!data) return null;
@@ -1716,6 +1828,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         requestPasswordReset,
         completeOnboarding,
         updateProfile,
+        uploadAvatar,
         signOut,
 
         campuses,
@@ -1742,6 +1855,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
         orders,
         createOrder,
+        checkoutAndPay,
         registerDeviceToken,
         unregisterDeviceToken,
         payOrder,

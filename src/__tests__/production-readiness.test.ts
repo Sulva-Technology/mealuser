@@ -2,10 +2,14 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../server';
 import {
+  MAX_AVATAR_UPLOAD_BYTES,
   derivePaymentPollingState,
   mapMeSession,
   mapNotification,
-  mapPaymentStatus
+  mapPaymentStatus,
+  stripEphemeralUserProfileFields,
+  uploadProfileAvatar,
+  validateAvatarFile
 } from '../store';
 
 function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
@@ -31,7 +35,8 @@ describe('backend contract mappers', () => {
         phoneNumber: '+2348012345678',
         defaultCampusId: 'campus-1',
         defaultLocationId: 'location-1',
-        onboardingCompleted: true
+        onboardingCompleted: true,
+        avatarUrl: 'https://cdn.test/signed-avatar.jpg'
       },
       roles: ['customer'],
       campuses: [{ campusId: 'campus-2', active: true }]
@@ -44,6 +49,36 @@ describe('backend contract mappers', () => {
       phone: '+2348012345678',
       campusId: 'campus-1',
       defaultLocationId: 'location-1',
+      isOnboarded: true,
+      avatarUrl: 'https://cdn.test/signed-avatar.jpg'
+    });
+  });
+
+  it('maps avatarUrl from the latest /me profile only', () => {
+    const user = mapMeSession({
+      profile: {
+        id: 'profile-1',
+        avatarUrl: 'https://cdn.test/latest-signed-avatar.webp'
+      },
+      actor: { email: 'student@example.com' }
+    });
+
+    expect(user.avatarUrl).toBe('https://cdn.test/latest-signed-avatar.webp');
+  });
+
+  it('strips short-lived avatarUrl before local profile persistence', () => {
+    const persistable = stripEphemeralUserProfileFields({
+      id: 'profile-1',
+      email: 'student@example.com',
+      fullName: 'Ada Student',
+      isOnboarded: true,
+      avatarUrl: 'https://cdn.test/short-lived.jpg'
+    });
+
+    expect(persistable).toEqual({
+      id: 'profile-1',
+      email: 'student@example.com',
+      fullName: 'Ada Student',
       isOnboarded: true
     });
   });
@@ -85,6 +120,81 @@ describe('backend contract mappers', () => {
         explicitCancel: false
       })
     ).toBe('pending_verification');
+  });
+});
+
+describe('profile avatar upload flow', () => {
+  it('accepts only jpeg, png, and webp files up to 2 MB', () => {
+    expect(validateAvatarFile(new File(['x'], 'avatar.jpg', { type: 'image/jpeg' }))).toBeNull();
+    expect(validateAvatarFile(new File(['x'], 'avatar.png', { type: 'image/png' }))).toBeNull();
+    expect(validateAvatarFile(new File(['x'], 'avatar.webp', { type: 'image/webp' }))).toBeNull();
+
+    expect(validateAvatarFile(new File(['x'], 'avatar.gif', { type: 'image/gif' }))).toContain('JPEG, PNG, or WebP');
+    expect(
+      validateAvatarFile(
+        new File([new Uint8Array(MAX_AVATAR_UPLOAD_BYTES + 1)], 'avatar.jpg', { type: 'image/jpeg' })
+      )
+    ).toContain('2 MB');
+  });
+
+  it('requests a signed upload URL, uploads binary bytes, then confirms key', async () => {
+    const calls: Array<{ kind: string; path?: string; method?: string; body?: any; input?: string; contentType?: string }> = [];
+    const file = new File(['avatar-bytes'], 'avatar.jpg', { type: 'image/jpeg' });
+
+    const updated = await uploadProfileAvatar(file, {
+      apiRequestImpl: async (path, method, body) => {
+        calls.push({ kind: 'api', path, method, body });
+        if (path === '/me/avatar/upload-url') {
+          return {
+            uploadUrl: 'https://storage.test/upload',
+            token: 'signed-token',
+            key: 'avatars/profile-1/avatar.jpg'
+          };
+        }
+        if (path === '/me/avatar/confirm') {
+          return {
+            profile: {
+              id: 'profile-1',
+              avatarUrl: 'https://cdn.test/new-signed-avatar.jpg',
+              onboardingCompleted: true
+            }
+          };
+        }
+        throw new Error(`unexpected path ${path}`);
+      },
+      fetchImpl: async (input, init) => {
+        calls.push({
+          kind: 'upload',
+          input: String(input),
+          method: init?.method,
+          contentType: new Headers(init?.headers).get('content-type') || undefined,
+          body: init?.body
+        });
+        return new Response(null, { status: 200 });
+      }
+    });
+
+    expect(updated.avatarUrl).toBe('https://cdn.test/new-signed-avatar.jpg');
+    expect(calls).toMatchObject([
+      {
+        kind: 'api',
+        path: '/me/avatar/upload-url',
+        method: 'POST',
+        body: { contentType: 'image/jpeg', sizeBytes: file.size }
+      },
+      {
+        kind: 'upload',
+        input: 'https://storage.test/upload',
+        method: 'PUT',
+        contentType: 'image/jpeg'
+      },
+      {
+        kind: 'api',
+        path: '/me/avatar/confirm',
+        method: 'POST',
+        body: { key: 'avatars/profile-1/avatar.jpg' }
+      }
+    ]);
   });
 });
 

@@ -3,6 +3,7 @@ import {
 	Activity,
 	Award,
 	Bookmark,
+	Camera,
 	Check,
 	CreditCard,
 	FileText,
@@ -27,7 +28,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMealDirect } from "../store";
+import { useMealDirect, validateAvatarFile } from "../store";
 import {
 	COUNTRIES,
 	parseStoredPhone,
@@ -61,6 +62,7 @@ export const ProfileView: React.FC = () => {
 	const {
 		user,
 		updateProfile,
+		uploadAvatar,
 		savedLocationIds,
 		toggleSaveLocation,
 		orders,
@@ -138,6 +140,7 @@ export const ProfileView: React.FC = () => {
 		user?.defaultLocationId || "",
 	);
 	const [isSaving, setIsSaving] = useState(false);
+	const [isAvatarUploading, setIsAvatarUploading] = useState(false);
 	const [showDeleteModal, setShowDeleteModal] = useState(false);
 	const [legalModal, setLegalModal] = useState<{ title: string; body: string } | null>(null);
 	const [msg, setMsg] = useState<{
@@ -147,6 +150,7 @@ export const ProfileView: React.FC = () => {
 
 	// D3 ref & state
 	const svgRef = useRef<SVGSVGElement | null>(null);
+	const avatarInputRef = useRef<HTMLInputElement | null>(null);
 	const [selectedWeek, setSelectedWeek] = useState<number>(0);
 	// Default selection to the most recent week whenever the data changes.
 	useEffect(() => {
@@ -225,6 +229,32 @@ export const ProfileView: React.FC = () => {
 			});
 		} finally {
 			setIsSaving(false);
+		}
+	};
+
+	const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		e.target.value = "";
+		if (!file) return;
+
+		const validationError = validateAvatarFile(file);
+		if (validationError) {
+			setMsg({ type: "error", txt: validationError });
+			return;
+		}
+
+		setMsg(null);
+		setIsAvatarUploading(true);
+		try {
+			await uploadAvatar(file);
+			setMsg({ type: "success", txt: "Your profile photo was updated." });
+		} catch (err: any) {
+			setMsg({
+				type: "error",
+				txt: err?.message || "Could not upload your profile photo. Please try again.",
+			});
+		} finally {
+			setIsAvatarUploading(false);
 		}
 	};
 
@@ -609,16 +639,43 @@ export const ProfileView: React.FC = () => {
 
 					<div className="flex items-center gap-4 mb-6">
 						<div className="w-16 h-16 rounded-full bg-emerald-deep/10 flex items-center justify-center text-emerald-deep font-bold text-xl uppercase shadow-sm border border-emerald-deep/20 overflow-hidden">
-							{user?.fullName?.charAt(0) || "G"}
+							{user?.avatarUrl ? (
+								<img
+									src={user.avatarUrl}
+									alt={user.fullName ? `${user.fullName} avatar` : "Profile avatar"}
+									className="w-full h-full object-cover"
+								/>
+							) : (
+								user?.fullName?.charAt(0) || "G"
+							)}
 						</div>
-						<div>
+						<div className="min-w-0 flex-1">
 							<p className="text-xs font-bold text-emerald-strong">
 								Profile Picture
 							</p>
 							<p className="text-[10px] text-muted-grey mt-0.5">
-								Auto-generated from your student name
+								JPEG, PNG, or WebP. Max 2 MB.
 							</p>
 						</div>
+						<input
+							ref={avatarInputRef}
+							type="file"
+							accept="image/jpeg,image/png,image/webp"
+							onChange={handleAvatarFileChange}
+							className="hidden"
+							id="profile_avatar_input"
+						/>
+						<button
+							type="button"
+							onClick={() => avatarInputRef.current?.click()}
+							disabled={isAvatarUploading}
+							className="px-3.5 py-2.5 rounded-xl bg-emerald-deep hover:bg-emerald-strong text-white text-[10px] font-bold transition cursor-pointer disabled:opacity-60 disabled:cursor-wait flex items-center gap-1.5 shrink-0"
+							id="profile_avatar_upload_btn"
+							aria-label="Upload profile avatar"
+						>
+							<Camera className="w-3.5 h-3.5" />
+							<span>{isAvatarUploading ? "Uploading..." : "Upload"}</span>
+						</button>
 					</div>
 
 					<div className="space-y-4">

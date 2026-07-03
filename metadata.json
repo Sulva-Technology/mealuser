@@ -1,6 +1,6 @@
 {
-  "name": "Remix: Remix: Meal Direct",
-  "description": "A premium customer PWA for Meal Direct at Venite University, offering scheduled campus delivery with Material Design 3 and Apple-inspired Liquid Glass styling.",
+  "name": "Meal Direct",
+  "description": "The Meal Direct customer app — order food on campus at Venite University with scheduled batch delivery, live order tracking, and secure Paystack payments.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

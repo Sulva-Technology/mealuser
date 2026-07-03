@@ -84,6 +84,20 @@ export interface ServerQuote {
   items: ServerQuoteItem[];
 }
 
+// Result of GET /v1/orders/{orderId}/payment-status, mapped for the UI.
+// `paid`/`terminalFail` are derived; the rest are surfaced straight from the
+// authoritative backend payment snapshot so screens can show a real reference/amount.
+export interface PaymentStatusResult {
+  orderStatus: OrderStatus;
+  paid: boolean;
+  terminalFail: boolean;
+  reference?: string;
+  paidAmountKobo?: number;
+  expectedAmountKobo?: number;
+  paidAt?: string;
+  rawPaymentStatus?: string;
+}
+
 export type OrderStatus =
   | 'PENDING_PAYMENT'
   | 'PAID'
@@ -170,6 +184,7 @@ export interface UserProfile {
   phone?: string;
   campusId?: string;
   defaultLocationId?: string;
+  avatarUrl?: string;
   isOnboarded: boolean;
 }
 
