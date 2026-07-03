@@ -130,7 +130,7 @@ export const OfflineBanner: React.FC = () => {
         </div>
       ) : (
         <div className="bg-[#10231C] text-white px-4 py-1 text-[11px] font-medium flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#16845B] animate-ping" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[#16845B]" />
           <span>Connected to Meal Direct.</span>
         </div>
       )}
