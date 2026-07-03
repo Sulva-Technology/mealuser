@@ -21,7 +21,8 @@ import {
   XCircle,
   CheckCircle2,
   AlertTriangle,
-  Info
+  Info,
+  Package
 } from 'lucide-react';
 import { formatNGN } from '../utils/helpers';
 
@@ -48,6 +49,26 @@ export const LoadingSkeleton: React.FC<{ r?: string; h?: string; w?: string; cla
   className = ''
 }) => {
   return <div className={`skeleton-pulse ${r} ${h} ${w} ${className}`} />;
+};
+
+// Portions-left indicator. Surfaces remaining inventory ("portions left") on a dish,
+// with low-stock (amber) and sold-out (red) styling. Renders nothing when qty isn't
+// a finite number so callers can pass through unknown/absent stock safely.
+export const PortionsBadge: React.FC<{ qty: number; className?: string }> = ({ qty, className = '' }) => {
+  if (typeof qty !== 'number' || !Number.isFinite(qty)) return null;
+  const soldOut = qty <= 0;
+  const low = qty > 0 && qty <= 5;
+  const tone = soldOut
+    ? 'bg-red-50 text-danger border-red-100'
+    : low
+    ? 'bg-amber-50 text-warning border-amber-200'
+    : 'bg-emerald-deep/8 text-emerald-strong border-emerald-deep/12';
+  return (
+    <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border ${tone} ${className}`}>
+      <Package className="w-2.5 h-2.5 shrink-0" />
+      {soldOut ? 'Sold out' : `${qty} ${qty === 1 ? 'portion' : 'portions'} left`}
+    </span>
+  );
 };
 
 // Custom Liquid Glass Card Wrapper

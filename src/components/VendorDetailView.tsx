@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useMealDirect, apiRequest, mapMenuItem } from '../store';
-import { AppShell, GlassPanel, Currency } from './CommonUI';
+import { AppShell, GlassPanel, Currency, PortionsBadge } from './CommonUI';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import { ArrowLeft, Clock, Star, Plus, Minus, ShoppingCart, Info, ShieldAlert, Trash2, Flame, Sparkles, Heart, Check } from 'lucide-react';
 import { CartItem, MenuItem } from '../types';
@@ -347,8 +347,9 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
                               </div>
 
                               <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                   <Currency kobo={item.priceKobo} className="text-xs text-ink-deep" />
+                                  <PortionsBadge qty={item.availableQuantity} />
                                   {activeInCart && (
                                     <span className="text-[8.5px] font-black uppercase tracking-wide text-emerald-strong bg-emerald-deep/10 px-1.5 py-0.5 rounded shrink-0">In cart · {activeInCart.quantity}</span>
                                   )}
@@ -428,6 +429,9 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
               </div>
               <h3 className="font-display font-black text-sm text-emerald-strong">{selectedItem.name}</h3>
               <p className="text-[10px] text-muted-grey mt-1">{selectedItem.description}</p>
+              <div className="flex justify-center mt-2">
+                <PortionsBadge qty={selectedItem.availableQuantity} />
+              </div>
             </div>
 
             {/* Nutrition (local estimate) */}

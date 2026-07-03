@@ -3,7 +3,7 @@ import { useMealDirect } from '../store';
 import { isSlotAvailable } from '../utils/helpers';
 import { resolveImage, handleImageError } from '../utils/images';
 // First import Skeleton
-import { AppShell, GlassPanel, Currency, Skeleton } from './CommonUI';
+import { AppShell, GlassPanel, Currency, Skeleton, PortionsBadge } from './CommonUI';
 // ... remove LoadingSkeleton import if possible or just ignore it.
 import { PullToRefresh } from './PullToRefresh';
 import {
@@ -85,6 +85,18 @@ export const HomeView: React.FC = () => {
   // Favorited dishes that actually resolve in the loaded catalog. Driving the tab
   // count off this list keeps the badge and the rendered cards in agreement.
   const favoriteItems = MENU_ITEMS.filter(it => favoriteItemIds?.includes(it.id));
+
+  // Slot orderability. A slot is orderable only when it's still open (past the
+  // ordering cutoff closes it) AND the catalog has at least one dish in stock for
+  // the day. Menu items aren't slot-scoped in the current model, so day-level
+  // stock is the fill signal. While the catalog is still loading (no items yet)
+  // we treat stock as available to avoid flashing "sold out". Unorderable slots
+  // stay visible with a reason label ("CLOSED" vs "SOLD OUT") instead of hiding.
+  const catalogHasStock = MENU_ITEMS.length === 0 || MENU_ITEMS.some(it => it.availableQuantity > 0);
+
+  // Resolve live portion counts for the most-ordered dishes (order history rows
+  // don't carry current inventory, so look them up in the loaded catalog).
+  const portionsById = new Map(MENU_ITEMS.map(it => [it.id, it.availableQuantity]));
 
   const handleSlotSelect = (slotId: string) => {
     setCurrentDateTimeLocation(currentDate, slotId, activeLocId);
@@ -325,9 +337,13 @@ export const HomeView: React.FC = () => {
                       <h4 className="font-display font-bold text-xs text-ink-deep truncate">{dish.name}</h4>
                       <p className="text-[10px] text-emerald-deep font-bold truncate">at {vendorObj?.name || 'Kitchen partner'}</p>
                     </div>
-                    <div className="shrink-0 text-right">
+                    <div className="shrink-0 text-right flex flex-col items-end gap-1">
                       <Currency kobo={dish.priceKobo} className="text-xs font-extrabold text-ink-deep block" />
-                      <span className="text-[9px] font-bold text-muted-grey">Ordered ×{dish.qty}</span>
+                      {portionsById.has(dish.menuItemId) ? (
+                        <PortionsBadge qty={portionsById.get(dish.menuItemId)!} />
+                      ) : (
+                        <span className="text-[9px] font-bold text-muted-grey">Ordered ×{dish.qty}</span>
+                      )}
                     </div>
                   </button>
                 );
@@ -361,19 +377,30 @@ export const HomeView: React.FC = () => {
           </div>
         </div>
 
-        {/* Scrollable Slot selection cards */}
+        {/* Slot selection cards — unorderable slots stay visible with a reason */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {DELIVERY_SLOTS.map(slot => {
-            const isAvail = isSlotAvailable(slot.time, currentDate);
+            const isOpen = isSlotAvailable(slot.time, currentDate);
+            const isSoldOut = isOpen && !catalogHasStock;
+            const isOrderable = isOpen && !isSoldOut;
             const isSelected = currentSlotId === slot.id;
+
+            const reason = !isOpen ? 'CLOSED' : isSoldOut ? 'SOLD OUT' : isSelected ? 'ACTIVE' : 'OPEN';
 
             return (
               <button
                 key={slot.id}
-                onClick={() => isAvail && handleSlotSelect(slot.id)}
-                disabled={!isAvail}
+                onClick={() => isOrderable && handleSlotSelect(slot.id)}
+                disabled={!isOrderable}
+                title={
+                  !isOpen
+                    ? 'Ordering closed — slots lock 60 mins before delivery'
+                    : isSoldOut
+                    ? 'No meals in stock for this date yet'
+                    : undefined
+                }
                 className={`px-5 py-4.5 rounded-[20px] transition duration-200 flex flex-col items-center justify-center gap-1 select-none text-center border ${
-                  !isAvail
+                  !isOrderable
                     ? 'bg-white border-ink-deep/5 shadow-xs opacity-50 cursor-not-allowed'
                     : isSelected
                     ? 'bg-emerald-deep text-white shadow-xl shadow-emerald-deep/20 border-emerald-deep scale-[1.02]'
@@ -381,15 +408,15 @@ export const HomeView: React.FC = () => {
                 }`}
               >
                 <span className={`text-xs font-bold uppercase tracking-wider ${
-                  !isAvail ? 'text-muted-grey/60' : isSelected ? 'text-white' : 'text-ink-deep'
+                  !isOrderable ? 'text-muted-grey/60' : isSelected ? 'text-white' : 'text-ink-deep'
                 }`}>
                   {slot.time}
                 </span>
 
                 <span className={`text-[10px] font-bold ${
-                  !isAvail ? 'text-red-500' : isSelected ? 'text-white/90' : 'text-emerald-deep'
+                  !isOrderable ? 'text-red-500' : isSelected ? 'text-white/90' : 'text-emerald-deep'
                 }`}>
-                  {!isAvail ? 'CLOSED' : isSelected ? 'ACTIVE' : 'OPEN'}
+                  {reason}
                 </span>
               </button>
             );
@@ -605,6 +632,9 @@ export const HomeView: React.FC = () => {
                           <p className="text-[10px] text-muted-grey mt-1 line-clamp-1">
                             {item.description}
                           </p>
+                          <div className="mt-1.5">
+                            <PortionsBadge qty={item.availableQuantity} />
+                          </div>
                         </div>
 
                         <div className="flex items-center justify-between mt-2.5">
