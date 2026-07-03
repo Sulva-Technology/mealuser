@@ -275,6 +275,37 @@ describe('CSP allows Firebase Cloud Messaging', () => {
 });
 
 describe('BFF auth and CSRF behavior', () => {
+  it('proxies public catalog vendors and menus without bearer auth', async () => {
+    const seen: Array<{ url: string; auth?: string }> = [];
+    const app = createApp({
+      backendUrl: 'https://backend.test',
+      isProd: false,
+      fetchImpl: async (input, init) => {
+        const headers = new Headers(init?.headers);
+        seen.push({
+          url: String(input),
+          auth: headers.get('authorization') || undefined
+        });
+        return jsonResponse({ data: [] });
+      }
+    });
+
+    await request(app)
+      .get('/api/public/catalog/vendors?campusId=campus-1')
+      .set('Cookie', ['md_access_token=access-1'])
+      .expect(200);
+
+    await request(app)
+      .get('/api/public/catalog/vendors/vendor-1/menu')
+      .set('Cookie', ['md_access_token=access-1'])
+      .expect(200);
+
+    expect(seen).toEqual([
+      { url: 'https://backend.test/v1/catalog/vendors?campusId=campus-1' },
+      { url: 'https://backend.test/v1/catalog/vendors/vendor-1/menu' }
+    ]);
+  });
+
   it('sets HttpOnly auth cookies and a readable CSRF cookie on customer login', async () => {
     const app = createApp({
       backendUrl: 'https://backend.test',

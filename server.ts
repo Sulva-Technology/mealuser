@@ -329,11 +329,25 @@ export function createApp(options: CreateAppOptions = {}) {
   // WITHOUT auth so the backend serves them publicly. Whitelisted paths only — this is
   // not a general open proxy.
   app.get(
-    ['/api/public/campuses/:campusId/locations', '/api/public/campuses/:campusId/delivery-slots'],
+    [
+      '/api/public/campuses/:campusId/locations',
+      '/api/public/campuses/:campusId/delivery-slots',
+      '/api/public/catalog/vendors',
+      '/api/public/catalog/vendors/:vendorId/menu'
+    ],
     async (req, res) => {
-      const resource = req.path.endsWith('/delivery-slots') ? 'delivery-slots' : 'locations';
       const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
-      const targetUrl = `${backendUrl}/v1/campuses/${encodeURIComponent(req.params.campusId)}/${resource}${query}`;
+      let targetUrl: string;
+
+      if (req.path.startsWith('/api/public/catalog/vendors/')) {
+        targetUrl = `${backendUrl}/v1/catalog/vendors/${encodeURIComponent(req.params.vendorId)}/menu${query}`;
+      } else if (req.path === '/api/public/catalog/vendors') {
+        targetUrl = `${backendUrl}/v1/catalog/vendors${query}`;
+      } else {
+        const resource = req.path.endsWith('/delivery-slots') ? 'delivery-slots' : 'locations';
+        targetUrl = `${backendUrl}/v1/campuses/${encodeURIComponent(req.params.campusId)}/${resource}${query}`;
+      }
+
       try {
         const backendResponse = await fetchImpl(targetUrl, {
           method: 'GET',

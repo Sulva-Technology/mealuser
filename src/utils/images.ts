@@ -16,6 +16,13 @@ import type React from 'react';
 const DEMO_BASE = (import.meta.env.VITE_DEMO_IMAGE_BASE || '').replace(/\/+$/, '');
 const DEMO_COUNT = Math.max(1, Number(import.meta.env.VITE_DEMO_IMAGE_COUNT) || 6);
 
+function normalizeImageUrl(url: string): string {
+  return url
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/&amp;/g, '&');
+}
+
 // Stable, order-independent string hash (djb2).
 function hashString(seed: string): number {
   let h = 5381;
@@ -52,7 +59,7 @@ export function demoImage(seed: string): string {
 
 // Resolve the src to use: the real URL if present, otherwise a demo picture.
 export function resolveImage(url: string | null | undefined, seed: string): string {
-  const trimmed = (url || '').trim();
+  const trimmed = normalizeImageUrl(url || '');
   return trimmed ? trimmed : demoImage(seed);
 }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { formatNGN, isSlotAvailable, computeSpendHistory, MAX_ORDER_TOTAL_KOBO } from '../utils/helpers';
+import { resolveImage } from '../utils/images';
 import {
   normalizeStatus,
   mapMenuItem,
@@ -112,6 +113,14 @@ describe('mapMenuItem', () => {
         image_url: 'https://cdn.test/moi-moi.jpg'
       }).imageUrl
     ).toBe('https://cdn.test/moi-moi.jpg');
+  });
+});
+
+describe('resolveImage', () => {
+  it('cleans escaped and quoted signed image URLs before rendering', () => {
+    expect(resolveImage('"https://cdn.test/logo.jpg?token=a&amp;download=1"', 'Vendor')).toBe(
+      'https://cdn.test/logo.jpg?token=a&download=1'
+    );
   });
 });
 

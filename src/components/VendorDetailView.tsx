@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useMealDirect, apiRequest, mapMenuItem } from '../store';
+import { useMealDirect, apiRequest, mapMenuItem, publicCatalogRequest } from '../store';
 import { AppShell, GlassPanel, Currency, PortionsBadge } from './CommonUI';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import { ArrowLeft, Clock, Star, Plus, Minus, ShoppingCart, Info, ShieldAlert, Trash2, Flame, Sparkles, Heart, Check } from 'lucide-react';
@@ -70,7 +70,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
 
   useEffect(() => {
     setIsLoading(true);
-    apiRequest(`/catalog/vendors/${vendorId}/menu`, 'GET', null)
+    publicCatalogRequest(`/catalog/vendors/${encodeURIComponent(vendorId)}/menu`)
       .then(items => {
         setMenuItems(Array.isArray(items) ? items.map((it: any) => mapMenuItem(it, vendorId)) : []);
         setIsLoading(false);

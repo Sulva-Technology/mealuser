@@ -78,7 +78,9 @@ export const VendorsView: React.FC = () => {
       vendors: matchedVendors.slice(0, 3), // suggest up to 3 kitchens
       dishes: matchedDishes.slice(0, 5)     // suggest up to 5 popular dishes
     };
-  }, [searchQuery]);
+    // VENDORS/MENU_ITEMS load async after mount — include them so suggestions
+    // recompute once the catalog arrives (otherwise they stay stale-empty).
+  }, [searchQuery, VENDORS, MENU_ITEMS]);
 
   // Check if current global slot allows ordering
   const activeSlotEntity = useMemo(() => {
@@ -109,7 +111,10 @@ export const VendorsView: React.FC = () => {
 
       return matchSearch && matchRating && matchSpecial;
     });
-  }, [debouncedSearchQuery, ratingFilter, specialFilter]);
+    // Must depend on VENDORS/MENU_ITEMS: the catalog loads asynchronously after
+    // this view mounts, and without these deps the memo returns its first (empty)
+    // result forever — which renders as "No vendors available yet".
+  }, [debouncedSearchQuery, ratingFilter, specialFilter, VENDORS, MENU_ITEMS]);
 
   return (
     <AppShell activeTab="vendors">

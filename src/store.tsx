@@ -953,7 +953,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           setCurrentSlotId(prev => (mappedSlots.some(s => s.id === prev) ? prev : mappedSlots[0].id));
         }
 
-        const vends = await apiRequest(`/catalog/vendors?campusId=${cId}`, 'GET');
+        const vends = await publicCatalogRequest(`/catalog/vendors?campusId=${encodeURIComponent(cId)}`);
         const vendorList: Vendor[] = Array.isArray(vends) ? vends.map(mapVendor) : [];
         setVendors(vendorList);
 
@@ -961,7 +961,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         // Tag each item with its vendor id so favorites/most-ordered can resolve the vendor.
         const menusNested = await Promise.all(
           vendorList.map(async v => {
-            const items = await apiRequest(`/catalog/vendors/${v.id}/menu`, 'GET').catch(() => []);
+            const items = await publicCatalogRequest(`/catalog/vendors/${encodeURIComponent(v.id)}/menu`).catch(() => []);
             return Array.isArray(items) ? items.map((it: any) => mapMenuItem(it, v.id)) : [];
           })
         );
