@@ -351,6 +351,7 @@ function parseLocation(): RouterState {
     if (parts[2]) params.orderId = parts[2];
     if (parts[3] === 'escalate') params.action = 'escalate';
     if (parts[3] === 'review') params.action = 'review';
+    if (parts[3] === 'receipt') params.action = 'receipt';
   }
 
   return { path, params };
@@ -506,10 +507,10 @@ const STATUS_TITLES: Record<string, { title: string; description: string }> = {
   PAID: { title: 'Payment Confirmed 💳', description: 'Payment verified. Order submitted to the vendor.' },
   ACCEPTED: { title: 'Order Accepted 🧑‍🍳', description: 'The vendor confirmed receipt and is assembling your meal.' },
   PREPARING: { title: 'In the Kitchen 🔥', description: 'Your meal is being cooked.' },
-  READY: { title: 'Takeaway Packaged 📦', description: 'Sealed and marked for courier dispatch.' },
-  PICKED_UP: { title: 'Picked up by Courier 🚴', description: 'Rider departed the pickup hub.' },
-  OUT_FOR_DELIVERY: { title: 'Out for Campus Dispatch 📍', description: 'Rider approaching your zone.' },
-  DELIVERED: { title: 'Arrived at Location 🏁', description: 'Takeaway delivered. Confirm receipt on screen.' },
+  READY: { title: 'Packed & ready 📦', description: 'Your order is packed and ready for the rider.' },
+  PICKED_UP: { title: 'Picked up by rider 🚴', description: 'Your rider has picked up your order.' },
+  OUT_FOR_DELIVERY: { title: 'Out for delivery 📍', description: 'Your rider is on the way to you.' },
+  DELIVERED: { title: 'Delivered 🏁', description: 'Your order has been delivered. Please confirm receipt.' },
   CONFIRMED: { title: 'Order Confirmed by Customer 👍', description: 'You confirmed successful delivery. Thank you!' },
   CANCELLED: { title: 'Order Cancelled', description: 'This order has been cancelled.' },
   EXPIRED: { title: 'Order Expired', description: 'Payment window elapsed before confirmation.' },
@@ -1091,8 +1092,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     navigateTo('/home');
 
     addNotification(
-      'Onboarding Completed 🎓',
-      `Welcome onboard${fullName ? ', ' + fullName.split(' ')[0] : ''}. Your default delivery location has been validated for campus dispatch.`,
+      'You are all set 🎓',
+      `Welcome${fullName ? ', ' + fullName.split(' ')[0] : ''}! Your default delivery location is saved.`,
       'general'
     );
   };
@@ -1214,8 +1215,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
 
     addNotification(
-      'Takeaway Added 🛍️',
-      `A custom takeaway package was added to your cart.`,
+      'Added to cart 🛍️',
+      `Item added to your cart.`,
       'general'
     );
   };
@@ -1250,7 +1251,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
 
     addNotification(
-      'Takeaway Updated 🛍️',
+      'Added to cart 🛍️',
       `${newItems.length} item${newItems.length > 1 ? 's' : ''} added to your cart.`,
       'general'
     );
@@ -1830,9 +1831,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setIsOnline(status);
     setLastSyncTime(new Date().toLocaleTimeString());
     if (status) {
-      addNotification('Connection Re-established 🤝', 'Application synchronized back with live Venite dispatch catalog.', 'general');
+      addNotification('Back online 🤝', 'You are reconnected. Your menu and orders are up to date.', 'general');
     } else {
-      addNotification('Offline Mode Triggered 🔌', 'Operating in cached safe mode. Financial transactions and order submission are disabled.', 'general');
+      addNotification('You are offline 🔌', 'You can still browse. Placing orders and payments are paused until you reconnect.', 'general');
     }
   };
 

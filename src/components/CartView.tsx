@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMealDirect } from '../store';
 import { AppShell, GlassPanel, Currency, MessageModal } from './CommonUI';
 import { resolveImage, handleImageError } from '../utils/images';
+import { buildSupportMailto, LEGAL_LINKS } from '../utils/support';
 import {
   Trash2,
   Calendar,
@@ -33,8 +34,7 @@ export const CartView: React.FC = () => {
     getCartQuote,
     fetchOrderQuote,
     validatePromo,
-    createOrder,
-    payOrder,
+    checkoutAndPay,
     isOnline,
     savedLocationIds,
     setCurrentDateTimeLocation,
@@ -85,15 +85,15 @@ export const CartView: React.FC = () => {
           <div className="w-48 h-32 mb-6 rounded-2xl overflow-hidden shadow-sm relative">
             <img src={emptyCartIllustration} alt="Empty Cart" className="w-full h-full object-cover" />
           </div>
-          <h2 className="font-display font-black text-xl text-emerald-strong">Your Takeaway Cart is Empty</h2>
+          <h2 className="font-display font-black text-xl text-emerald-strong">Your cart is empty</h2>
           <p className="text-xs text-muted-grey mt-2 max-w-sm mx-auto leading-relaxed">
-            Choose a kitchen partner from the Home Dashboard and assemble your custom compostable box.
+            Pick a vendor and add some meals to get started.
           </p>
           <button
             onClick={() => navigateTo('/home')}
             className="mt-6 px-6 py-3 bg-emerald-deep hover:bg-emerald-strong text-white font-bold rounded-2xl text-xs cursor-pointer transition active:scale-95 shadow-lg shadow-emerald-deep/15"
           >
-            Browse Active Vendors
+            Browse vendors
           </button>
         </div>
       </AppShell>
@@ -105,6 +105,14 @@ export const CartView: React.FC = () => {
   const activeLocation = PRESET_LOCATIONS.find(l => l.id === cart.deliveryLocationId);
   const activeSlot = DELIVERY_SLOTS.find(s => s.id === cart.deliverySlotId);
   const activeVendor = VENDORS.find(v => v.id === cart.vendorId);
+
+  // Next-day pre-order model: inventory/batches are provisioned for tomorrow onward,
+  // so today is not selectable. Backend remains the final authority on cutoffs.
+  const minOrderDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  })();
 
   // Authoritative figures when the server quote is present, else local estimate.
   const displaySubtotalKobo = serverQuote ? serverQuote.foodSubtotalKobo : quote.subtotalKobo;
@@ -171,19 +179,15 @@ export const CartView: React.FC = () => {
     setErrorMessage(null);
     setIsCreatingOrder(true);
 
-    createOrder(specialInstructions, appliedPromo || undefined)
-      .then(async orderResult => {
-        try {
-          const authUrl = await payOrder(orderResult.id);
-          window.location.href = authUrl; // redirect out to Paystack
-        } catch (paymentErr: any) {
-          setIsCreatingOrder(false);
-          setErrorMessage(paymentErr.message || 'Payment initialization failed.');
-        }
+    // Single consolidated create-order → initialize-payment path (guarded against
+    // double submission in the store), so one tap can never make two orders.
+    checkoutAndPay(specialInstructions, appliedPromo || undefined)
+      .then(({ authorizationUrl }) => {
+        window.location.href = authorizationUrl; // redirect out to Paystack
       })
       .catch(err => {
         setIsCreatingOrder(false);
-        setErrorMessage(err.message || 'Failed to lock checkout inventory quotas. Try adjusting your order.');
+        setErrorMessage(err.message || 'We could not start checkout. Please try again.');
       });
   };
 
@@ -199,9 +203,9 @@ export const CartView: React.FC = () => {
       <AppShell activeTab="cart">
         <div className="text-center py-16 bg-white rounded-3xl border border-emerald-deep/8 flex flex-col items-center justify-center p-6" id="order_creating_state">
           <Loader2 className="w-10 h-10 text-emerald-deep animate-spin mb-4" />
-          <h3 className="font-display font-bold text-sm text-emerald-strong">Securing Ingredient Inventory...</h3>
+          <h3 className="font-display font-bold text-sm text-emerald-strong">Starting secure checkout…</h3>
           <p className="text-xs text-muted-grey mt-1 max-w-sm">
-            Communicating with <strong>{activeVendor?.name || 'the kitchen'}</strong>. Reserving your delivery slot and redirecting to secure Paystack payment.
+            Placing your order with <strong>{activeVendor?.name || 'the vendor'}</strong> and redirecting you to secure Paystack payment.
           </p>
         </div>
       </AppShell>
@@ -214,9 +218,9 @@ export const CartView: React.FC = () => {
       <section className="mb-6" id="cart_header">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-black tracking-widest text-emerald-deep uppercase bg-emerald-deep/5 px-2.5 py-1 rounded">BASKET REVIEW</span>
-            <h2 className="font-display font-black text-2xl text-emerald-strong mt-1.5" id="cart_title">Your Customized Takeaway Box</h2>
-            <p className="text-xs text-muted-grey">Review items, spoon counts, and authoritative dispatcher schedules.</p>
+            <span className="text-[10px] font-black tracking-widest text-emerald-deep uppercase bg-emerald-deep/5 px-2.5 py-1 rounded">REVIEW ORDER</span>
+            <h2 className="font-display font-black text-2xl text-emerald-strong mt-1.5" id="cart_title">Your cart</h2>
+            <p className="text-xs text-muted-grey">Review your items, delivery details, and total before you pay.</p>
           </div>
 
           <button
@@ -226,7 +230,7 @@ export const CartView: React.FC = () => {
             id="clear_cart_trigger"
           >
             <Trash2 className="w-4 h-4" />
-            <span className="hidden sm:inline">Delete Drawer</span>
+            <span className="hidden sm:inline">Clear cart</span>
           </button>
         </div>
       </section>
@@ -253,7 +257,7 @@ export const CartView: React.FC = () => {
         <div className="lg:col-span-2 space-y-6">
           {/* Card list of items */}
           <GlassPanel className="p-6">
-            <h3 className="font-display font-bold text-sm text-emerald-strong mb-4">Takeway Items Selection</h3>
+            <h3 className="font-display font-bold text-sm text-emerald-strong mb-4">Takeaway items</h3>
 
             <div className="divide-y divide-emerald-deep/8">
               {cart.items.map(cartItem => {
@@ -336,7 +340,7 @@ export const CartView: React.FC = () => {
 
           {/* Micro dispatch terminal indicators */}
           <GlassPanel className="p-6">
-            <h3 className="font-display font-bold text-sm text-emerald-strong mb-4">Designated Dispatch target</h3>
+            <h3 className="font-display font-bold text-sm text-emerald-strong mb-4">Delivery details</h3>
 
             {/* Saved Delivery Locations Shortcuts */}
             {savedLocationIds.length > 0 && (
@@ -372,7 +376,7 @@ export const CartView: React.FC = () => {
             <div className="space-y-3.5 text-xs">
               <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-neutral-50/50 border border-neutral-100">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-grey font-semibold">Dispatch location desk:</span>
+                  <span className="text-muted-grey font-semibold">Delivery location:</span>
                   <span className="font-bold text-emerald-strong flex items-center gap-1 text-right max-w-[200px] truncate">
                     <MapPin className="w-3.5 h-3.5 text-emerald-deep shrink-0" />
                     {activeLocation ? activeLocation.name : 'Not set'}
@@ -396,7 +400,7 @@ export const CartView: React.FC = () => {
 
               <div className={`flex flex-col gap-1.5 p-3 rounded-xl border ${hasUnavailable ? 'bg-red-50/60 border-red-200' : 'bg-neutral-50/50 border-neutral-100'}`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-grey font-semibold">Delivery schedule slot:</span>
+                  <span className="text-muted-grey font-semibold">Delivery slot:</span>
                   <span className="font-bold text-emerald-strong flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-emerald-deep" />
                     {activeSlot ? activeSlot.label : 'Select Slot'}
@@ -426,7 +430,7 @@ export const CartView: React.FC = () => {
 
               <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-neutral-50/50 border border-neutral-100">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-grey font-semibold">Target dispatch Date:</span>
+                  <span className="text-muted-grey font-semibold">Delivery date:</span>
                   <span className="font-bold text-emerald-strong flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-emerald-deep" />
                     {cart.deliveryDate}
@@ -440,10 +444,14 @@ export const CartView: React.FC = () => {
                       setCurrentDateTimeLocation(e.target.value, cart.deliverySlotId, cart.deliveryLocationId);
                     }
                   }}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={minOrderDate}
                   className="w-full text-[11px] font-bold text-ink-deep bg-white border border-neutral-200 rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-emerald-deep cursor-pointer mt-1"
                   id="cart_date_picker"
                 />
+                <span className="text-[10px] text-muted-grey mt-1 flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-emerald-deep shrink-0" />
+                  Next-day ordering — earliest delivery is tomorrow. Same-day is not available.
+                </span>
               </div>
             </div>
 
@@ -451,7 +459,7 @@ export const CartView: React.FC = () => {
               onClick={() => navigateTo('/home')}
               className="mt-5 w-full py-3 bg-neutral-50 hover:bg-emerald-deep/5 border border-emerald-deep/12 rounded-xl text-xs font-bold text-emerald-strong cursor-pointer transition text-center"
             >
-              ← Continue Shopping / Add More Items
+              ← Continue shopping / add more items
             </button>
           </GlassPanel>
 
@@ -483,7 +491,7 @@ export const CartView: React.FC = () => {
         {/* Right Segment (Quoting & Payment) */}
         <div className="space-y-6">
           <GlassPanel className="p-6 bg-emerald-strong text-white border-t-4 border-t-mango-warm">
-            <h3 className="font-display text-base font-bold mb-4 text-white">Takeway Cost Summary</h3>
+            <h3 className="font-display text-base font-bold mb-4 text-white">Cost summary</h3>
 
             {/* Spoon Meter limit badge */}
             <div className="mb-4 bg-emerald-deep/40 rounded-xl p-3 border border-white/8">
@@ -607,6 +615,22 @@ export const CartView: React.FC = () => {
             <p className="text-[9px] text-white/50 mt-3 text-center leading-relaxed flex items-center justify-center gap-1">
               <Lock className="w-2.5 h-2.5" /> Final prices lock at payment. Secured by Paystack.
             </p>
+
+            {/* Refund / cancellation summary + policy + support (checkout review) */}
+            <div className="mt-3 pt-3 border-t border-white/10 text-[9px] text-white/60 leading-relaxed space-y-1.5">
+              <p>
+                You can cancel before the vendor accepts. After that, cancellations and refunds are handled by support.
+                Refunds may take time to appear depending on your bank.
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <a href={LEGAL_LINKS.refundPolicy} target="_blank" rel="noopener noreferrer" className="underline hover:text-white">
+                  Refund policy
+                </a>
+                <a href={buildSupportMailto({ category: 'Checkout help' })} className="underline hover:text-white">
+                  Contact support
+                </a>
+              </div>
+            </div>
           </GlassPanel>
         </div>
       </div>
@@ -680,11 +704,11 @@ export const CartView: React.FC = () => {
           <div className="bg-white rounded-3xl p-6 max-w-sm w-full border border-red-100 shadow-2xl flex flex-col gap-4">
             <div className="flex items-center gap-2.5 text-danger font-bold text-xs">
               <AlertTriangle className="w-5 h-5 text-danger" />
-              <span>Empty Current Takeaway Cart?</span>
+              <span>Clear your cart?</span>
             </div>
 
             <p className="text-xs text-muted-grey leading-relaxed">
-              This action will securely empty all registered custom ingredients or packages currently configured in your basket. This cannot be undone.
+              This will remove all items from your cart. This can't be undone.
             </p>
 
             <div className="flex gap-2">
@@ -692,7 +716,7 @@ export const CartView: React.FC = () => {
                 onClick={() => setShowClearConfirm(false)}
                 className="flex-1 py-2.5 bg-neutral-50 hover:bg-neutral-100 text-muted-grey font-semibold text-xs rounded-xl transition cursor-pointer"
               >
-                Cancel Keep
+                Keep cart
               </button>
               <button
                 onClick={handleClearCart}

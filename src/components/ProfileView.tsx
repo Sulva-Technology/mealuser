@@ -199,7 +199,7 @@ export const ProfileView: React.FC = () => {
 		if (!selectedLocation) {
 			setMsg({
 				type: "error",
-				txt: "Please select an authorized preset hostel or department desk terminal.",
+				txt: "Please select your hostel or department as your delivery location.",
 			});
 			return;
 		}
@@ -220,7 +220,7 @@ export const ProfileView: React.FC = () => {
 			);
 			setMsg({
 				type: "success",
-				txt: "Your contact profiles and default dispatch terminal were saved.",
+				txt: "Your profile and default delivery location were saved.",
 			});
 		} catch (err: any) {
 			setMsg({
@@ -568,7 +568,7 @@ export const ProfileView: React.FC = () => {
 													Order {order.orderNumber}
 												</span>
 												<h4 className="font-display font-extrabold text-xs text-ink-deep mt-0.5">
-													{vendor?.name || "Kitchen Partner"}
+													{vendor?.name || "Vendor"}
 												</h4>
 											</div>
 
@@ -835,7 +835,7 @@ export const ProfileView: React.FC = () => {
 						<p className="text-xs text-muted-grey mb-3.5 leading-relaxed">
 							These campus locations are actively bookmarked as checkout
 							shortcut cards. Tap any shortcut card below to instantly configure
-							it as your main default dispatch terminal desk!
+							it as your your default delivery location.
 						</p>
 						<div className="flex flex-wrap gap-2">
 							{savedLocationIds.map((locId) => {
@@ -886,14 +886,12 @@ export const ProfileView: React.FC = () => {
 				<GlassPanel className="p-6">
 					<h3 className="font-display font-bold text-sm text-emerald-strong mb-4 flex items-center gap-1.5">
 						<MapPin className="w-4.5 h-4.5 text-emerald-deep" />
-						Default Dispatch terminal preset
+						Default delivery location
 					</h3>
 
 					<p className="text-xs text-muted-grey mb-4 leading-relaxed">
-						Choose your primary campus delivery terminal below. Standard batch
-						deliveries are packaged and dispatched directly to these terminals.
-						Use the bookmark star shortcut to pin/unpin structures for instant
-						checkout selectors.
+						Choose where your orders are delivered by default. Use the star to
+						pin locations as quick shortcuts at checkout.
 					</p>
 
 					<div className="mb-6">
@@ -921,7 +919,7 @@ export const ProfileView: React.FC = () => {
 						{/* ZONE A */}
 						<div>
 							<span className="text-[9px] font-black tracking-wider text-emerald-strong bg-emerald-deep/5 px-2 py-0.5 rounded uppercase">
-								Zone A Terminals
+								Zone A
 							</span>
 
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-3">
@@ -1024,7 +1022,7 @@ export const ProfileView: React.FC = () => {
 						{/* ZONE B */}
 						<div>
 							<span className="text-[9px] font-black tracking-wider text-mango-warm bg-mango-warm/5 px-2 py-0.5 rounded uppercase">
-								Zone B Terminals
+								Zone B
 							</span>
 
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-3">
@@ -1133,7 +1131,7 @@ export const ProfileView: React.FC = () => {
 					id="profile_save_btn"
 				>
 					<span>
-						{isSaving ? "Saving Profile..." : "Save Dispatch Settings"}
+						{isSaving ? "Saving…" : "Save changes"}
 					</span>
 				</button>
 			</form>

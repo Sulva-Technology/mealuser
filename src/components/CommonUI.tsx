@@ -379,7 +379,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
                   Customer
                 </span>
               </h1>
-              <p className="text-[10px] text-muted-grey font-medium leading-none tracking-wide">Venite University Dispatch</p>
+              <p className="text-[10px] text-muted-grey font-medium leading-none tracking-wide">Venite University</p>
             </div>
           </div>
         </div>
@@ -498,7 +498,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
                 <h4 className="text-xs font-bold text-ink-deep leading-none">Need Support?</h4>
               </div>
               <p className="text-[10px] text-muted-grey leading-relaxed mb-3 font-medium">
-                Have orders delayed? Lodge structure escalations directly on the tracking screen.
+                Need help with an order? Reach us from any order's details page.
               </p>
               <a
                 href="https://mealdirect.com/support"
@@ -553,7 +553,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
       {!user && (
         <footer className="py-6 px-4 border-t border-emerald-deep/8 text-center text-[11px] text-muted-grey bg-white/50 backdrop-blur" id="auth_footer">
           <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p>© {new Date().getFullYear()} Meal Direct Inc. Venite campus dispatch dispatch. All rights reserved.</p>
+            <p>© {new Date().getFullYear()} Meal Direct Inc. Campus food delivery. All rights reserved.</p>
             <div className="flex gap-4">
               <a href="https://mealdirect.com/terms" target="_blank" rel="noopener noreferrer" className="hover:underline">Terms of Service</a>
               <a href="https://mealdirect.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:underline">Privacy Policy</a>

@@ -16,7 +16,7 @@ export const LiveTrackerPip: React.FC<LiveTrackerPipProps> = ({ order }) => {
   const pipLoopRef = useRef<number | null>(null);
   const [isPipActive, setIsPipActive] = useState(false);
 
-  const vendorName = vendors.find(v => v.id === order.vendorId)?.name || 'Kitchen Partner';
+  const vendorName = vendors.find(v => v.id === order.vendorId)?.name || 'Vendor';
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -275,7 +275,7 @@ export const LiveTrackerPip: React.FC<LiveTrackerPipProps> = ({ order }) => {
         </div>
         <div>
           <h4 className="text-xs font-bold text-emerald-strong leading-tight">Home Screen Live Tracker</h4>
-          <p className="text-[10px] text-muted-grey mt-0.5 leading-tight">Keep an eye on dispatch when app is minimized</p>
+          <p className="text-[10px] text-muted-grey mt-0.5 leading-tight">Track your order while the app is minimized</p>
         </div>
       </div>
 

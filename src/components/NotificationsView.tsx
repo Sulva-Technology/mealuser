@@ -56,9 +56,9 @@ export const NotificationsView: React.FC = () => {
       <section className="mb-6" id="notifications_page_header">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-black tracking-widest text-emerald-deep uppercase bg-emerald-deep/5 px-2.5 py-1 rounded">STUDENT DISPATCH HUB</span>
-            <h2 className="font-display font-black text-2xl text-emerald-strong mt-1.5" id="notifications_headline">Your Notifications Alerts</h2>
-            <p className="text-xs text-muted-grey">Check real-time alerts regarding kitchen cooking loops and courier dispatches.</p>
+            <span className="text-[10px] font-black tracking-widest text-emerald-deep uppercase bg-emerald-deep/5 px-2.5 py-1 rounded">NOTIFICATIONS</span>
+            <h2 className="font-display font-black text-2xl text-emerald-strong mt-1.5" id="notifications_headline">Your notifications</h2>
+            <p className="text-xs text-muted-grey">Order updates and support replies show up here.</p>
           </div>
 
           {notifications.some(n => !n.read) && (

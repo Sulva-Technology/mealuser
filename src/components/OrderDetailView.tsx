@@ -4,6 +4,7 @@ import { AppShell, GlassPanel, Currency, LoadingSkeleton, MessageModal } from '.
 import { DeliveredAnimation } from './DeliveredAnimation';
 import { resolveImage, handleImageError } from '../utils/images';
 import { LiveTrackerPip } from './LiveTrackerPip';
+import { buildSupportMailto, copyToClipboard, LEGAL_LINKS } from '../utils/support';
 import {
   ArrowLeft,
   Clock,
@@ -21,12 +22,50 @@ import {
   Play,
   HelpCircle,
   ClipboardList,
-  CreditCard
+  CreditCard,
+  Receipt as ReceiptIcon,
+  ShieldCheck,
+  RotateCcw
 } from 'lucide-react';
 import { Escalation, OrderStatus } from '../types';
 
 interface OrderDetailProps {
   orderId: string;
+}
+
+// An order counts as paid once it has moved past the pre-payment / dead states.
+function isOrderPaid(status: OrderStatus): boolean {
+  return !['PENDING_PAYMENT', 'CANCELLED', 'EXPIRED'].includes(status);
+}
+
+// Customer-facing cancellation eligibility. The backend exposes NO customer cancel
+// endpoint (cancellation/refunds are admin-only), so this only communicates whether
+// it's still reasonable to request one via support, based on order progress.
+function cancellationNotice(status: OrderStatus): { canRequest: boolean; text: string } {
+  switch (status) {
+    case 'PENDING_PAYMENT':
+      return { canRequest: true, text: 'This order can still be cancelled before payment is confirmed.' };
+    case 'PAID':
+      return { canRequest: true, text: 'Payment received. You can request a cancellation until the vendor accepts.' };
+    case 'ACCEPTED':
+      return { canRequest: false, text: 'The vendor has accepted this order, so it can no longer be cancelled here.' };
+    case 'PREPARING':
+      return { canRequest: false, text: 'Your order is being prepared and can no longer be cancelled.' };
+    case 'READY':
+    case 'PICKED_UP':
+    case 'OUT_FOR_DELIVERY':
+      return { canRequest: false, text: 'Your order is on its way and can no longer be cancelled.' };
+    case 'DELIVERED':
+    case 'CONFIRMED':
+    case 'ADMINISTRATIVELY_COMPLETED':
+      return { canRequest: false, text: 'This order is complete and cannot be cancelled.' };
+    case 'CANCELLED':
+      return { canRequest: false, text: 'This order has been cancelled.' };
+    case 'REFUNDED':
+      return { canRequest: false, text: 'This order was refunded.' };
+    default:
+      return { canRequest: false, text: 'Cancellation is handled by support for this order.' };
+  }
 }
 
 export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
@@ -54,6 +93,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
 
   // Copy state
   const [copied, setCopied] = useState(false);
+  const [copiedRef, setCopiedRef] = useState(false);
 
   // Form states for support escalations
   const [escalateCategory, setEscalateCategory] = useState<Escalation['category']>('NON_DELIVERY');
@@ -181,12 +221,12 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
           className="mb-4 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-deep hover:underline cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Tracker Details</span>
+          <span>Back to order</span>
         </button>
 
         <section className="mb-6">
-          <h2 className="font-display font-black text-2xl text-emerald-strong">Report Order Issue</h2>
-          <p className="text-xs text-muted-grey">Lodge structured query to the Venite Dispatch Operations center.</p>
+          <h2 className="font-display font-black text-2xl text-emerald-strong">Report an issue</h2>
+          <p className="text-xs text-muted-grey">Tell us what went wrong and our support team will help.</p>
         </section>
 
         <MessageModal
@@ -200,8 +240,8 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
         {escalateSubmitted ? (
           <GlassPanel className="p-8 text-center border-t-4 border-t-red-500 max-w-md mx-auto">
             <CheckCircle2 className="w-12 h-12 text-emerald-strong mx-auto mb-4 animate-bounce" />
-            <h3 className="font-display font-bold text-base text-emerald-strong">Ticket Logged Securely ✅</h3>
-            <p className="text-xs text-muted-grey mt-1">Our helpdesk manager was notified. apology logs are processing. Standby.</p>
+            <h3 className="font-display font-bold text-base text-emerald-strong">Issue reported ✅</h3>
+            <p className="text-xs text-muted-grey mt-1">Our support team has been notified and will be in touch shortly.</p>
           </GlassPanel>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6" id="escalation_form_wrapper">
@@ -209,23 +249,23 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
               <GlassPanel className="p-6">
                 <div className="space-y-4">
                   <div>
-                    <label className="text-[10px] font-bold text-muted-grey block mb-1.5 uppercase">Issue Classification Category</label>
+                    <label className="text-[10px] font-bold text-muted-grey block mb-1.5 uppercase">What went wrong?</label>
                     <select
                       value={escalateCategory}
                       onChange={(e) => setEscalateCategory(e.target.value as any)}
                       className="w-full px-4 py-3 bg-white border border-emerald-deep/15 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-deep cursor-pointer"
                     >
-                      <option value="NON_DELIVERY">Non-Delivery (Takeaway has not arrived at terminal desk)</option>
-                      <option value="INCOMPLETE_OR_WRONG_FOOD">Incomplete or Incorrect items found in box</option>
-                      <option value="QUALITY">Quality / Cold temperature issues</option>
-                      <option value="PACKAGING">Packaging seal / Spoons missing</option>
-                      <option value="DELAY">Unacceptable Dispatch Delay</option>
-                      <option value="OTHER">Other general campus logistics query</option>
+                      <option value="NON_DELIVERY">Not delivered (my order has not arrived)</option>
+                      <option value="INCOMPLETE_OR_WRONG_FOOD">Wrong or missing items</option>
+                      <option value="QUALITY">Food quality (e.g. cold food)</option>
+                      <option value="PACKAGING">Packaging or missing spoons</option>
+                      <option value="DELAY">Late delivery</option>
+                      <option value="OTHER">Something else</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-muted-grey block mb-1.5 uppercase">Lodge Description Details</label>
+                    <label className="text-[10px] font-bold text-muted-grey block mb-1.5 uppercase">Describe the issue</label>
                     <textarea
                       placeholder="Be specific. Incomplete orders undergo camera inspection at the meal kitchen before credit resolution..."
                       rows={4}
@@ -251,19 +291,19 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
             {/* Context parameters sidebar card */}
             <div>
               <GlassPanel className="p-5 bg-neutral-50/50 border border-emerald-deep/10">
-                <h4 className="font-display font-bold text-xs text-emerald-strong mb-3">Order Context details</h4>
+                <h4 className="font-display font-bold text-xs text-emerald-strong mb-3">Order details</h4>
                 
                 <div className="space-y-4 text-xs grayscale-[30%] opacity-80">
                   <div>
-                    <span className="text-[9px] text-muted-grey block uppercase font-bold">Takeway Code</span>
+                    <span className="text-[9px] text-muted-grey block uppercase font-bold">Order code</span>
                     <span className="font-mono font-bold text-emerald-strong">{order.orderNumber}</span>
                   </div>
                   <div>
-                    <span className="text-[9px] text-muted-grey block uppercase font-bold">Kitchen Partner</span>
+                    <span className="text-[9px] text-muted-grey block uppercase font-bold">Vendor</span>
                     <span className="font-bold text-ink-deep">{activeVendor?.name}</span>
                   </div>
                   <div>
-                    <span className="text-[9px] text-muted-grey block uppercase font-bold">Flat remitted</span>
+                    <span className="text-[9px] text-muted-grey block uppercase font-bold">Total</span>
                     <Currency kobo={order.totalKobo} className="font-mono font-bold text-ink-deep" />
                   </div>
                 </div>
@@ -284,12 +324,12 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
           className="mb-4 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-deep hover:underline cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Tracker Details</span>
+          <span>Back to order</span>
         </button>
 
         <section className="mb-6">
-          <h2 className="font-display font-black text-2xl text-emerald-strong font-bold">Rate Meal & Kitchen</h2>
-          <p className="text-xs text-muted-grey">Your reviews grade partner scorecards directly for campus dispatch.</p>
+          <h2 className="font-display font-black text-2xl text-emerald-strong font-bold">Rate your order</h2>
+          <p className="text-xs text-muted-grey">Your feedback helps other students and our vendors.</p>
         </section>
 
         <MessageModal
@@ -362,7 +402,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
                 className="w-full py-4.5 bg-emerald-deep hover:bg-emerald-strong text-white font-bold text-xs rounded-xl shadow-lg cursor-pointer shadow-emerald-deep/15 active:scale-95 transition"
                 id="submit_review_form"
               >
-                Log Partner Review
+                Submit review
               </button>
             </form>
           </div>
@@ -394,7 +434,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
         id="back-to-orders-list"
       >
         <ArrowLeft className="w-4 h-4" />
-        <span>Back to Dispatch Log</span>
+        <span>Back to orders</span>
       </button>
 
       {/* 1. Header order HUD bar */}
@@ -415,11 +455,11 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
                 <span>{copied ? 'Copied' : 'Copy'}</span>
               </button>
             </div>
-            <p className="text-[10px] text-muted-grey mt-1.5">Submitted: {new Date(order.createdAt).toLocaleDateString()} • Dispatch terminal desk fallback lookup</p>
+            <p className="text-[10px] text-muted-grey mt-1.5">Placed {new Date(order.createdAt).toLocaleDateString()}</p>
           </div>
 
           <div className="text-right shrink-0">
-            <span className="text-[9px] text-muted-grey block uppercase font-bold">Remitted checkout total:</span>
+            <span className="text-[9px] text-muted-grey block uppercase font-bold">Order total</span>
             <Currency kobo={order.totalKobo} className="text-base font-black text-emerald-strong select-all" />
           </div>
         </GlassPanel>
@@ -438,7 +478,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
               </div>
               <div>
                 <h4 className="text-xs font-bold text-emerald-strong">Live Order Status</h4>
-                <p className="text-[9px] text-muted-grey mt-0.5">Status updates automatically. Tap refresh to check for the latest dispatch update now.</p>
+                <p className="text-[9px] text-muted-grey mt-0.5">Status updates automatically. Tap refresh to check for the latest update now.</p>
               </div>
             </div>
 
@@ -462,7 +502,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
           <GlassPanel className="p-6">
             <h3 className="font-display font-bold text-sm text-emerald-strong mb-6 flex items-center gap-1.5">
               <Clock className="w-4.5 h-4.5 text-emerald-deep" />
-              Real-Time Dispatch Timeline
+              Order timeline
             </h3>
 
             {/* Custom dynamic timeline stack */}
@@ -498,9 +538,9 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
             {order.status === 'DELIVERED' && (
               <div className="mt-8 pt-6 border-t border-emerald-deep/8 text-center bg-emerald-deep/5 -mx-6 -mb-6 p-6 rounded-b-2xl animate-fade-in" id="confirm_receipt_gateway">
                 <CheckCircle2 className="w-10 h-10 text-emerald-deep mx-auto mb-3 animate-pulse" />
-                <h4 className="text-xs font-bold text-emerald-strong">Takeaway Arrived at Destination Desk Terminal</h4>
+                <h4 className="text-xs font-bold text-emerald-strong">Your order has arrived</h4>
                 <p className="text-[10px] text-muted-grey max-w-sm mx-auto mt-1 leading-relaxed">
-                  The dispatcher has marked your lunch/dinner batch as delivered. Please verify packaging seals and click below to finalize.
+                  Your order has been marked as delivered. Please check your items, then confirm below.
                 </p>
 
                 <button
@@ -509,7 +549,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
                   id="confirm_delivery_action_btn"
                 >
                   <Check className="w-4 h-4" />
-                  <span>Confirm Dispatch Receipt</span>
+                  <span>Confirm delivery</span>
                 </button>
               </div>
             )}
@@ -546,7 +586,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
 
           {/* Itemized summary list */}
           <GlassPanel className="p-6">
-            <h3 className="font-display font-bold text-sm text-emerald-strong mb-4">Packaged takeaways Details</h3>
+            <h3 className="font-display font-bold text-sm text-emerald-strong mb-4">Items</h3>
 
             <div className="divide-y divide-emerald-deep/6">
               {order.items.map((it, iIdx) => (
@@ -554,7 +594,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
                   <div className="flex items-center justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <p className="font-bold text-emerald-strong truncate">{it.name}</p>
-                      <span className="text-[10px] text-muted-grey block mt-0.5">Plastic Spoons: {it.spoonsCount} • Quantity: {it.quantity}x</span>
+                      <span className="text-[10px] text-muted-grey block mt-0.5">Spoons: {it.spoonsCount} • Qty: {it.quantity}</span>
                     </div>
                     <Currency kobo={it.priceKobo * it.quantity} className="font-mono text-ink-deep font-bold shrink-0" />
                   </div>
@@ -578,8 +618,115 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
 
         {/* Right Segments Meta panel */}
         <div className="space-y-6">
+          {/* Payment summary card */}
+          {(() => {
+            const paid = isOrderPaid(order.status);
+            const cancel = cancellationNotice(order.status);
+            const supportHref = buildSupportMailto({
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              paymentReference: order.paymentReference,
+              status: order.status,
+              category: 'Order / payment issue'
+            });
+            const debitedHref = buildSupportMailto({
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              paymentReference: order.paymentReference,
+              status: order.status,
+              category: 'Debited but order pending'
+            });
+            return (
+              <GlassPanel className="p-5 text-xs border border-emerald-deep/12 space-y-3.5" id="order_payment_card">
+                <h4 className="font-display font-bold text-emerald-strong border-b border-neutral-200/60 pb-2.5 flex items-center gap-1.5">
+                  <CreditCard className="w-4 h-4 text-emerald-deep" />
+                  Payment
+                </h4>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-grey">Payment status</span>
+                  <span className={`font-black uppercase text-[10px] px-2 py-0.5 rounded ${
+                    order.status === 'REFUNDED'
+                      ? 'bg-amber-50 text-warning'
+                      : paid ? 'bg-emerald-deep/10 text-emerald-strong' : 'bg-amber-50 text-warning'
+                  }`}>
+                    {order.status === 'REFUNDED' ? 'Refunded' : paid ? 'Paid' : 'Awaiting payment'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-grey shrink-0">{paid ? 'Amount paid' : 'Amount due'}</span>
+                  <Currency kobo={order.totalKobo} className="font-bold text-ink-deep" />
+                </div>
+
+                {order.paymentReference && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-grey shrink-0">Reference</span>
+                    <button
+                      onClick={async () => {
+                        if (await copyToClipboard(order.paymentReference!)) {
+                          setCopiedRef(true);
+                          setTimeout(() => setCopiedRef(false), 1800);
+                        }
+                      }}
+                      className="flex items-center gap-1 font-mono text-[10px] text-emerald-strong hover:text-emerald-deep cursor-pointer min-w-0"
+                      title="Copy payment reference"
+                    >
+                      <span className="truncate max-w-[130px]">{order.paymentReference}</span>
+                      {copiedRef ? <Check className="w-3 h-3 shrink-0" /> : <Copy className="w-3 h-3 shrink-0 opacity-60" />}
+                    </button>
+                  </div>
+                )}
+
+                {/* Refund visibility */}
+                {order.status === 'REFUNDED' && (
+                  <div className="flex items-start gap-1.5 text-[10px] text-warning bg-amber-50 border border-amber-200 rounded-lg p-2 leading-relaxed">
+                    <RotateCcw className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>This order was refunded. Refunds may take time to appear depending on your bank.</span>
+                  </div>
+                )}
+
+                {/* Cancellation visibility */}
+                <div className="text-[10px] text-muted-grey leading-relaxed border-t border-neutral-200/60 pt-2.5">
+                  {cancel.text}
+                </div>
+
+                <div className="flex flex-col gap-2 pt-1">
+                  {paid && (
+                    <button
+                      onClick={() => navigateTo(`/orders/${orderId}/receipt`)}
+                      className="w-full py-2.5 bg-emerald-deep/10 hover:bg-emerald-deep/15 text-emerald-strong font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                      id="view_receipt_btn"
+                    >
+                      <ReceiptIcon className="w-4 h-4" /> View receipt
+                    </button>
+                  )}
+                  {order.status === 'PENDING_PAYMENT' && (
+                    <a
+                      href={debitedHref}
+                      className="w-full py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-warning font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 text-center"
+                    >
+                      I was debited but my order is pending
+                    </a>
+                  )}
+                  <a
+                    href={supportHref}
+                    className="w-full py-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-muted-grey font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <HelpCircle className="w-4 h-4" /> Contact support
+                  </a>
+                </div>
+
+                <div className="flex items-center justify-center gap-1.5 text-[9px] text-muted-grey pt-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-deep" />
+                  <a href={LEGAL_LINKS.refundPolicy} target="_blank" rel="noopener noreferrer" className="underline">Refund policy</a>
+                </div>
+              </GlassPanel>
+            );
+          })()}
+
           <GlassPanel className="p-5 text-xs bg-neutral-50/50 border border-emerald-deep/10 space-y-4">
-            <h4 className="font-display font-bold text-ink-deep border-b border-neutral-200/60 pb-2.5">Academic Kitchen Partner</h4>
+            <h4 className="font-display font-bold text-ink-deep border-b border-neutral-200/60 pb-2.5">Kitchen partner</h4>
             
             <div className="flex items-center gap-2.5">
               <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-neutral-100">
@@ -587,22 +734,22 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
               </div>
               <div>
                 <h5 className="font-bold text-emerald-strong">{activeVendor?.name}</h5>
-                <p className="text-[10.5px] text-muted-grey mt-0.5">Campus lead certified chef</p>
+                <p className="text-[10.5px] text-muted-grey mt-0.5">Vendor</p>
               </div>
             </div>
           </GlassPanel>
 
           <GlassPanel className="p-5 text-xs bg-neutral-50/50 border border-emerald-deep/10 space-y-3">
-            <h4 className="font-display font-medium text-xs text-ink-deep border-b border-neutral-200/60 pb-2.5">Dispatch schedule Metadata</h4>
-            
+            <h4 className="font-display font-medium text-xs text-ink-deep border-b border-neutral-200/60 pb-2.5">Delivery details</h4>
+
             <div>
-              <span className="text-[9px] text-[#617069] uppercase font-semibold">Location Desk</span>
+              <span className="text-[9px] text-[#617069] uppercase font-semibold">Delivery location</span>
               <p className="font-bold text-emerald-strong truncate mt-0.5">{activeLocation?.name}</p>
-              <span className="text-[10px] text-[#617069] font-medium block mt-0.5">Group zone: {activeLocation?.zone}</span>
+              <span className="text-[10px] text-[#617069] font-medium block mt-0.5">Zone: {activeLocation?.zone}</span>
             </div>
 
             <div>
-              <span className="text-[9px] text-[#617069] uppercase font-semibold">Target delivery window</span>
+              <span className="text-[9px] text-[#617069] uppercase font-semibold">Delivery slot</span>
               <p className="font-bold text-emerald-strong mt-0.5">{activeSlot?.label}</p>
             </div>
           </GlassPanel>
@@ -644,7 +791,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
                 id="review_timeline_trigger"
               >
                 <MessageSquare className="w-4 h-4 text-emerald-strong" />
-                <span>Write Kitchen Review</span>
+                <span>Write a review</span>
               </button>
             )}
 
@@ -655,7 +802,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
                 id="resume_payment_trigger"
               >
                 <CreditCard className="w-4 h-4 text-emerald-strong" />
-                <span>Resume Paystack Payment</span>
+                <span>Pay securely</span>
               </button>
             )}
 
@@ -666,7 +813,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
                 id="escalation_trigger_active"
               >
                 <AlertTriangle className="w-4 h-4" />
-                <span>Lodge Support Escalation</span>
+                <span>Report an issue</span>
               </button>
             )}
 
@@ -676,7 +823,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
                 onClick={() => setShowCancelModal(true)}
                 className="w-full py-3 bg-neutral-100/50 hover:bg-neutral-200 text-neutral-500 font-bold text-xs rounded-xl transition cursor-pointer text-center flex items-center justify-center gap-1"
               >
-                <span>Get Cancellation Help</span>
+                <span>Cancel order</span>
               </button>
             )}
           </div>

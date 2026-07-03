@@ -116,9 +116,9 @@ export const VendorsView: React.FC = () => {
       {/* 1. Header context */}
       <section className="mb-6" id="vendors_page_header">
         <div>
-          <span className="text-[10px] font-black tracking-widest text-emerald-deep uppercase bg-emerald-deep/5 px-2.5 py-1 rounded">Venite Catalog</span>
+          <span className="text-[10px] font-black tracking-widest text-emerald-deep uppercase bg-emerald-deep/5 px-2.5 py-1 rounded">Vendors</span>
           <h2 className="font-display font-black text-2xl text-emerald-strong mt-1.5" id="vendors_headline">Available Launch Vendors</h2>
-          <p className="text-xs text-muted-grey">Browse authorized kitchen partners certified to batch-dispatch for your selected slot.</p>
+          <p className="text-xs text-muted-grey">Browse vendors delivering to your campus.</p>
         </div>
       </section>
 
@@ -320,23 +320,48 @@ export const VendorsView: React.FC = () => {
             ))}
           </div>
         ) : filteredVendors.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-2xl border border-emerald-deep/8 flex flex-col items-center justify-center p-6" id="vendors_empty_state">
-            <XCircle className="w-12 h-12 text-muted-grey opacity-40 mb-3" />
-            <h4 className="font-display font-bold text-sm text-emerald-strong">No Vendors Found Matching Filters</h4>
-            <p className="text-xs text-muted-grey mt-1 max-w-sm">
-              Adjust your search keywords or clear rating selections to browse the active Venite Launch partners.
-            </p>
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                setRatingFilter(null);
-                setSpecialFilter('all');
-              }}
-              className="mt-4 px-4 py-2 bg-emerald-deep text-white font-bold rounded-xl text-xs cursor-pointer active:scale-95 transition"
-            >
-              Clear Filters
-            </button>
-          </div>
+          (() => {
+            const filtersActive =
+              debouncedSearchQuery.trim() !== '' || ratingFilter !== null || specialFilter !== 'all';
+            // No filters + nothing to show = the campus catalog is genuinely empty
+            // (no vendors open yet), which is different from "your search matched nothing".
+            if (!filtersActive) {
+              return (
+                <div className="text-center py-12 bg-white rounded-2xl border border-emerald-deep/8 flex flex-col items-center justify-center p-6" id="vendors_none_available_state">
+                  <Store className="w-12 h-12 text-muted-grey opacity-40 mb-3" />
+                  <h4 className="font-display font-bold text-sm text-emerald-strong">No vendors available yet</h4>
+                  <p className="text-xs text-muted-grey mt-1 max-w-sm">
+                    No kitchens are open for your campus right now. Please check back a little later.
+                  </p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="mt-4 px-4 py-2 bg-emerald-deep text-white font-bold rounded-xl text-xs cursor-pointer active:scale-95 transition"
+                  >
+                    Refresh
+                  </button>
+                </div>
+              );
+            }
+            return (
+              <div className="text-center py-12 bg-white rounded-2xl border border-emerald-deep/8 flex flex-col items-center justify-center p-6" id="vendors_empty_state">
+                <XCircle className="w-12 h-12 text-muted-grey opacity-40 mb-3" />
+                <h4 className="font-display font-bold text-sm text-emerald-strong">No results</h4>
+                <p className="text-xs text-muted-grey mt-1 max-w-sm">
+                  No vendors or dishes match your search and filters. Try different keywords or clear your filters.
+                </p>
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setRatingFilter(null);
+                    setSpecialFilter('all');
+                  }}
+                  className="mt-4 px-4 py-2 bg-emerald-deep text-white font-bold rounded-xl text-xs cursor-pointer active:scale-95 transition"
+                >
+                  Clear filters
+                </button>
+              </div>
+            );
+          })()
         ) : (
           <motion.div
             variants={containerVariants}

@@ -43,7 +43,7 @@ export const OnboardingView: React.FC = () => {
       setTerminals(rows.filter((loc: any) => loc.active !== false).map(mapLocation));
     } catch (err: any) {
       setTerminals([]);
-      setTerminalsError(err?.message || 'Could not load dispatch terminals. Please retry.');
+      setTerminalsError(err?.message || 'Could not load delivery locations. Please retry.');
     } finally {
       setTerminalsLoading(false);
     }
@@ -82,7 +82,7 @@ export const OnboardingView: React.FC = () => {
     }
 
     if (!selectedLocation) {
-      setErrorMessage('Please select a valid preset hostel or department terminal desk for your drops.');
+      setErrorMessage('Please select your hostel or department as your delivery location.');
       return;
     }
 
@@ -201,16 +201,16 @@ export const OnboardingView: React.FC = () => {
           <GlassPanel className="p-6">
             <div className="flex items-center gap-2.5 mb-4">
               <MapPin className="w-5 h-5 text-emerald-deep" />
-              <h3 className="font-display font-bold text-sm text-emerald-strong">Select Preset Dispatch Terminal</h3>
+              <h3 className="font-display font-bold text-sm text-emerald-strong">Select your delivery location</h3>
             </div>
 
             <p className="text-xs text-muted-grey mb-4 leading-relaxed">
-              Meal Direct operates <strong>batch delivery</strong> to eliminate delays. Registering your most common hostel residency or department building wing ensures flawless timing.
+              Meal Direct delivers to set points on campus. Pick your usual hostel or department so we can deliver to the right place.
             </p>
 
             {/* Campus Selector */}
             <div className="mb-6">
-              <label className="text-[10px] font-bold text-muted-grey block mb-1.5 uppercase">Select Campus Unit</label>
+              <label className="text-[10px] font-bold text-muted-grey block mb-1.5 uppercase">Select campus</label>
               <select
                 value={selectedCampus}
                 onChange={(e) => {
@@ -229,7 +229,7 @@ export const OnboardingView: React.FC = () => {
             {terminalsLoading ? (
               <div className="flex items-center justify-center gap-2.5 py-8 text-xs text-muted-grey">
                 <Loader2 className="w-4 h-4 animate-spin text-emerald-deep" />
-                <span>Loading dispatch terminals…</span>
+                <span>Loading locations…</span>
               </div>
             ) : terminalsError ? (
               <div className="flex flex-col items-center gap-3 py-6 text-center">
@@ -248,14 +248,14 @@ export const OnboardingView: React.FC = () => {
               </div>
             ) : terminals.length === 0 ? (
               <p className="text-xs text-muted-grey italic py-4 text-center">
-                No dispatch terminals available for this campus yet. Please check back shortly.
+                No delivery locations available for this campus yet. Please check back shortly.
               </p>
             ) : (
               <div className="space-y-6">
                 {zoneGroups.map(group => (
                   <div key={group.zoneName}>
                     <span className="text-[10px] font-bold tracking-wider text-emerald-strong bg-emerald-deep/5 px-2.5 py-1 rounded-full uppercase">
-                      {group.zoneName} Dispatch Terminals
+                      {group.zoneName}
                     </span>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-3">

@@ -11,6 +11,7 @@ import { HomeView } from "./components/HomeView";
 import { OrderDetailView } from "./components/OrderDetailView";
 import { OrdersView } from "./components/OrdersView";
 import { PaymentStatusView } from "./components/PaymentStatusView";
+import { Receipt } from "./components/Receipt";
 import { MealDirectProvider, useMealDirect } from "./store";
 
 const CartView = React.lazy(() => import("./components/CartView").then(module => ({ default: module.CartView })));
@@ -73,6 +74,9 @@ const RouteDispatcher: React.FC = () => {
 					return <PaymentStatusView orderId={params.orderId} />;
 				}
 				if (path.startsWith("/orders/") && params.orderId) {
+					if (params.action === "receipt") {
+						return <Receipt orderId={params.orderId} />;
+					}
 					return <OrderDetailView orderId={params.orderId} />;
 				}
 

@@ -359,9 +359,9 @@ export const HomeView: React.FC = () => {
           <div>
             <h3 className="font-display font-medium text-sm text-emerald-strong flex items-center gap-1.5" id="delivery_slot_title">
               <Calendar className="w-4 h-4 text-emerald-deep" />
-              Choose Delivery Target Context
+              Choose your delivery slot
             </h3>
-            <p className="text-[10px] text-muted-grey mt-0.5">We dispatch batch boxes only. Orders locked 60 mins before delivery.</p>
+            <p className="text-[10px] text-muted-grey mt-0.5">Next-day delivery. Orders lock 60 minutes before the delivery slot.</p>
           </div>
           
           {/* Quick Date override input */}
@@ -437,7 +437,7 @@ export const HomeView: React.FC = () => {
             }`}
           >
             <Store className="w-4 h-4" />
-            <span>Kitchen Partners</span>
+            <span>Vendors</span>
           </button>
           <button
             onClick={() => setActiveCatalogTab('favorites')}
@@ -497,9 +497,9 @@ export const HomeView: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-display font-medium text-xs tracking-widest text-emerald-strong bg-emerald-deep/5 px-2.5 py-1 rounded inline-block uppercase block">
-                  Certified Academic Launch Vendors
+                  Campus vendors
                 </h3>
-                <p className="text-[10px] text-muted-grey mt-1">vetted campus partners cooking with premium hygiene standards for Venite.</p>
+                <p className="text-[10px] text-muted-grey mt-1">Vetted campus vendors cooking to high hygiene standards.</p>
               </div>
               <button
                 onClick={() => navigateTo('/vendors')}

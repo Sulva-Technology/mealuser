@@ -26,17 +26,17 @@ export const OfflineView: React.FC = () => {
           <div className="mt-8 border-t border-emerald-deep/8 pt-6 text-left">
             <h3 className="text-xs font-bold text-emerald-strong mb-3 flex items-center gap-1.5 justify-center">
               <Key className="w-4 h-4 text-emerald-deep" />
-              Academic Dispatch Recovery Reference
+              Your saved order references
             </h3>
 
             {offlineCachedOrders.length === 0 ? (
               <p className="text-[10px] text-muted-grey leading-relaxed text-center italic">
-                No active paid orders found in your terminal storage cache.
+                No saved orders found on this device.
               </p>
             ) : (
               <div className="space-y-2.5">
                 <p className="text-[10px] text-muted-grey leading-relaxed mb-1">
-                  If you are already standing at the destination desk terminal, present these order keys and transaction identifiers directly to the dispatch courier:
+                  If you're at your delivery location, show these order and payment references to your rider:
                 </p>
 
                 {offlineCachedOrders.map(order => (

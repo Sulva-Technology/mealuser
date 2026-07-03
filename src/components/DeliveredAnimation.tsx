@@ -121,9 +121,9 @@ export const DeliveredAnimation: React.FC<DeliveredAnimationProps> = ({ orderNum
 
         {/* Content text */}
         <div className="relative z-10 space-y-1.5 mt-2">
-          <h3 className="font-display font-black text-lg text-emerald-strong">Takeaway Arrived! 🏁</h3>
+          <h3 className="font-display font-black text-lg text-emerald-strong">Delivered! 🏁</h3>
           <p className="text-xs text-muted-grey px-4 leading-relaxed">
-            Order item <span className="font-mono font-bold text-emerald-deep bg-emerald-deep/5 px-1.5 py-0.5 rounded text-[11px] border border-emerald-deep/8">{orderNumber}</span> has been securely dispatched at your preset location terminal desk.
+            Order <span className="font-mono font-bold text-emerald-deep bg-emerald-deep/5 px-1.5 py-0.5 rounded text-[11px] border border-emerald-deep/8">{orderNumber}</span> has been delivered to your location.
           </p>
           <div className="inline-flex items-center gap-1 bg-[#16845B]/5 px-3 py-1 rounded-full text-[10px] font-bold text-[#16845B] mt-2 border border-[#16845B]/10">
             <ShieldCheck className="w-3.5 h-3.5" />
