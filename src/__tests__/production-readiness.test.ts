@@ -5,6 +5,7 @@ import {
   MAX_AVATAR_UPLOAD_BYTES,
   derivePaymentPollingState,
   mapMeSession,
+  normalizeOrder,
   mapNotification,
   mapPaymentStatus,
   stripEphemeralUserProfileFields,
@@ -120,6 +121,39 @@ describe('backend contract mappers', () => {
         explicitCancel: false
       })
     ).toBe('pending_verification');
+  });
+
+  it('keeps unpaid expired payment attempts retryable as pending payment', () => {
+    const status = mapPaymentStatus({
+      orderStatus: 'expired',
+      payment: {
+        providerReference: 'pay_ref_1',
+        status: 'initialized',
+        expectedAmountKobo: 35000
+      }
+    });
+
+    expect(status).toMatchObject({
+      orderStatus: 'PENDING_PAYMENT',
+      paid: false,
+      terminalFail: false,
+      reference: 'pay_ref_1',
+      expectedAmountKobo: 35000,
+      rawPaymentStatus: 'initialized'
+    });
+
+    expect(
+      normalizeOrder({
+        id: 'order-1',
+        orderNumber: 'MD-001',
+        orderStatus: 'expired',
+        latestPayment: {
+          providerReference: 'pay_ref_1',
+          status: 'initialized',
+          expectedAmountKobo: 35000
+        }
+      }).status
+    ).toBe('PENDING_PAYMENT');
   });
 });
 

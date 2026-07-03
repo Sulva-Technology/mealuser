@@ -177,6 +177,7 @@ function applySecurity(app: Express, backendUrl: string, isProd: boolean) {
               'connect-src': [
                 "'self'",
                 backendUrl,
+                'https://*.supabase.co',
                 'https://*.ingest.sentry.io',
                 'https://sentry.io',
                 // FCM getToken(): Installations + registration APIs (page and SW).

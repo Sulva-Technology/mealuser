@@ -93,6 +93,26 @@ describe('mapMenuItem', () => {
     expect(mapped.availableQuantity).toBe(0);
     expect(mapped.description).toBe('');
   });
+
+  it('accepts alternate backend food image fields', () => {
+    expect(
+      mapMenuItem({
+        id: 'item_photo',
+        name: 'Peppered Rice',
+        priceKobo: 25000,
+        photoUrl: 'https://cdn.test/peppered-rice.jpg'
+      }).imageUrl
+    ).toBe('https://cdn.test/peppered-rice.jpg');
+
+    expect(
+      mapMenuItem({
+        id: 'item_snake',
+        name: 'Moi Moi',
+        priceKobo: 15000,
+        image_url: 'https://cdn.test/moi-moi.jpg'
+      }).imageUrl
+    ).toBe('https://cdn.test/moi-moi.jpg');
+  });
 });
 
 describe('mapLocation', () => {

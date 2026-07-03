@@ -449,11 +449,24 @@ export function isPaymentConfirmed(payment: any): boolean {
   );
 }
 
+function firstNonEmptyString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return '';
+}
+
 export function mapPaymentStatus(data: any): PaymentStatusResult {
-  const orderStatus = normalizeStatus(data?.orderStatus);
+  const rawOrderStatus = normalizeStatus(data?.orderStatus);
   const payment = data?.payment || null;
   const payStatus = (payment?.status || '').toLowerCase();
   const paymentConfirmed = isPaymentConfirmed(payment);
+  // An unpaid EXPIRED order is still a payment-retry candidate in the customer app:
+  // re-initializing Paystack should keep the order in the pending-payment lane.
+  const orderStatus =
+    rawOrderStatus === 'EXPIRED' && !paymentConfirmed ? 'PENDING_PAYMENT' : rawOrderStatus;
   const paid =
     paymentConfirmed ||
     (orderStatus !== 'PENDING_PAYMENT' && orderStatus !== 'CANCELLED' && orderStatus !== 'EXPIRED');
@@ -461,7 +474,7 @@ export function mapPaymentStatus(data: any): PaymentStatusResult {
   // never send a genuinely-paid order to the "cancelled/expired" failure screen.
   const terminalFail =
     !paymentConfirmed &&
-    (orderStatus === 'CANCELLED' || orderStatus === 'EXPIRED' || payStatus === 'failed');
+    (rawOrderStatus === 'CANCELLED' || payStatus === 'failed');
   return {
     orderStatus,
     paid,
@@ -538,8 +551,8 @@ export function normalizeOrder(s: any, existing?: Order): Order {
   // If the backend still reports EXPIRED but the latest payment actually settled
   // (webhook landed after the payment window), treat the order as PAID so it no
   // longer surfaces as expired in the order history/timeline.
-  if (status === 'EXPIRED' && isPaymentConfirmed(s.latestPayment)) {
-    status = 'PAID';
+  if (status === 'EXPIRED') {
+    status = isPaymentConfirmed(s.latestPayment) ? 'PAID' : 'PENDING_PAYMENT';
   }
   const items = Array.isArray(s.items) && s.items.length
     ? s.items.map((it: any, i: number) => mapOrderItem(it, existing?.items?.[i]))
@@ -605,7 +618,7 @@ export function mapVendor(raw: any): Vendor {
     id: raw.id,
     name: raw.displayName || raw.name || 'Vendor',
     description: raw.description || '',
-    imageUrl: raw.logoUrl || raw.imageUrl || '',
+    imageUrl: firstNonEmptyString(raw.logoUrl, raw.imageUrl, raw.image_url, raw.photoUrl, raw.thumbnailUrl),
     rating: typeof raw.rating === 'number' ? raw.rating : (raw.ratingAverage ?? 0),
     reviewCount: typeof raw.reviewCount === 'number' ? raw.reviewCount : (raw.ratingCount ?? 0),
     featuredTags: raw.featuredTags || (raw.kitchenLocation ? [raw.kitchenLocation] : []),
@@ -620,7 +633,16 @@ export function mapMenuItem(raw: any, vendorId?: string): MenuItem {
     name: raw.name,
     description: raw.description || '',
     priceKobo: raw.priceKobo,
-    imageUrl: raw.imageUrl || '',
+    imageUrl: firstNonEmptyString(
+      raw.imageUrl,
+      raw.image_url,
+      raw.photoUrl,
+      raw.photo_url,
+      raw.thumbnailUrl,
+      raw.thumbnail_url,
+      raw.pictureUrl,
+      raw.picture_url
+    ),
     category: raw.categoryName || raw.category || 'General',
     availableQuantity: raw.remainingQuantity ?? raw.availableQuantity ?? 0,
     vendorId: raw.vendorId ?? vendorId ?? ''
@@ -636,13 +658,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [router, setRouter] = useState<RouterState>(parseLocation());
 
   // Global Context state: Selection overrides
-  // Default to tomorrow: campus dispatch is a next-day pre-order model (inventory and
-  // delivery batches are provisioned for current_date + 1), and same-day slots are
-  // routinely past their ordering cutoff. Defaulting to tomorrow lands checkout on a
-  // valid, in-stock slot out of the box; users can still pick another date in the cart.
+  // Default to the current date (today).
   const [currentDate, setCurrentDate] = useState<string>(() => {
     const d = new Date();
-    d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   });
   const [currentSlotId, setCurrentSlotId] = useState<string>('slot_12'); // Defaults to Lunch
