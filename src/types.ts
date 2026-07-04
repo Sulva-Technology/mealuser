@@ -63,7 +63,7 @@ export interface Cart {
 
 export interface OrderQuote {
   subtotalKobo: number;
-  deliveryFeeKobo: number; // Flat ₦150 (15000 kobo)
+  deliveryFeeKobo: number; // Flat ₦200 (20000 kobo)
   totalKobo: number;
   itemCount: number;
   spoonCount: number;

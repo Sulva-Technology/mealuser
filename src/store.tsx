@@ -104,15 +104,50 @@ function csrfHeaders(method: string) {
   return csrf ? { 'X-MealDirect-CSRF': csrf } : {};
 }
 
+// Auth calls run against a serverless BFF that cold-starts, and mobile/campus
+// networks drop connections. A bare fetch() surfaces the raw "Failed to fetch" to
+// the user and gives the request no time budget, so wrap it with a timeout and a
+// single retry on transient network errors (never on an HTTP error response — a
+// 4xx is a real answer, not a blip).
+const AUTH_TIMEOUT_MS = 20_000;
+
 async function authRequest(path: string, method = 'POST', body: any = null): Promise<any> {
-  const response = await fetch(`${AUTH_BASE}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    credentials: 'same-origin',
-    body: body ? JSON.stringify(body) : null
-  });
+  const doFetch = async (): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
+    try {
+      return await fetch(`${AUTH_BASE}${path}`, {
+        method,
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'same-origin',
+        body: body ? JSON.stringify(body) : null,
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  let response: Response;
+  try {
+    response = await doFetch();
+  } catch (networkErr) {
+    // fetch() rejects only on network failure/abort — retry once, then give the
+    // caller a friendly, actionable message instead of the raw browser error.
+    try {
+      response = await doFetch();
+    } catch {
+      console.warn(`Auth network error [${method} ${path}]:`, networkErr);
+      const err = new Error(
+        'Network error — check your connection and try again. If it keeps failing, disable browser extensions or try another network.'
+      );
+      (err as any).network = true;
+      throw err;
+    }
+  }
+
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const err = new Error(errorData?.error?.message || errorData?.message || `HTTP ${response.status}`);
@@ -1458,7 +1493,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const getCartQuote = (): OrderQuote => {
     if (!cart) {
-      return { subtotalKobo: 0, deliveryFeeKobo: 15000, totalKobo: 15000, itemCount: 0, spoonCount: 0, isValid: false, errors: ['Cart is empty'] };
+      return { subtotalKobo: 0, deliveryFeeKobo: 20000, totalKobo: 20000, itemCount: 0, spoonCount: 0, isValid: false, errors: ['Cart is empty'] };
     }
 
     let subtotalKobo = 0;
@@ -1485,7 +1520,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
     });
 
-    const deliveryFeeKobo = 15000; // Flat ₦150
+    const deliveryFeeKobo = 20000; // Flat ₦200
     const totalKobo = subtotalKobo + deliveryFeeKobo;
 
     return {

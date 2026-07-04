@@ -138,7 +138,7 @@ export const HomeView: React.FC = () => {
                 </span>
                 <span className="text-neutral-200 hidden md:inline">|</span>
                 <span className="text-[11px] font-mono text-emerald-deep bg-emerald-deep/5 border border-emerald-deep/12 rounded px-2 py-0.2">
-                  Launch Flat Fee: ₦150
+                  Launch Flat Fee: ₦200
                 </span>
               </div>
 
