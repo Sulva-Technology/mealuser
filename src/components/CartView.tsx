@@ -106,12 +106,11 @@ export const CartView: React.FC = () => {
   const activeSlot = DELIVERY_SLOTS.find(s => s.id === cart.deliverySlotId);
   const activeVendor = VENDORS.find(v => v.id === cart.vendorId);
 
-  // Next-day pre-order model: inventory/batches are provisioned for tomorrow onward,
-  // so today is not selectable. Backend remains the final authority on cutoffs.
+  // Same-day ordering: today is selectable (uses the LOCAL calendar date, not the
+  // UTC date). Backend remains the final authority on per-slot cutoffs.
   const minOrderDate = (() => {
     const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().split('T')[0];
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   })();
 
   // Authoritative figures when the server quote is present, else local estimate.
@@ -450,7 +449,7 @@ export const CartView: React.FC = () => {
                 />
                 <span className="text-[10px] text-muted-grey mt-1 flex items-center gap-1">
                   <Clock className="w-3 h-3 text-emerald-deep shrink-0" />
-                  Next-day ordering — earliest delivery is tomorrow. Same-day is not available.
+                  Same-day ordering available. Orders lock 60 minutes before the delivery slot.
                 </span>
               </div>
             </div>

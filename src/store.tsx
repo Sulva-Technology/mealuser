@@ -659,10 +659,12 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [router, setRouter] = useState<RouterState>(parseLocation());
 
   // Global Context state: Selection overrides
-  // Default to the current date (today).
+  // Default to today (same-day ordering). Use the LOCAL calendar date, not the UTC
+  // date from toISOString(), so it doesn't read as "yesterday" in the early hours
+  // for users ahead of UTC (e.g. WAT, UTC+1).
   const [currentDate, setCurrentDate] = useState<string>(() => {
     const d = new Date();
-    return d.toISOString().split('T')[0];
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   });
   const [currentSlotId, setCurrentSlotId] = useState<string>('slot_12'); // Defaults to Lunch
   const [currentLocationId, setCurrentLocationId] = useState<string>('');

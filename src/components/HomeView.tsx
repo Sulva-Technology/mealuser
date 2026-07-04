@@ -361,7 +361,7 @@ export const HomeView: React.FC = () => {
               <Calendar className="w-4 h-4 text-emerald-deep" />
               Choose your delivery slot
             </h3>
-            <p className="text-[10px] text-muted-grey mt-0.5">Next-day delivery. Orders lock 60 minutes before the delivery slot.</p>
+            <p className="text-[10px] text-muted-grey mt-0.5">Same-day delivery available. Orders lock 60 minutes before the delivery slot.</p>
           </div>
           
           {/* Quick Date override input */}
