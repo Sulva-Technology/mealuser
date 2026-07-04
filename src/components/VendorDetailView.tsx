@@ -134,12 +134,24 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
     }, 0);
   }, [cart, vendorId, menuItems]);
 
+  // The global catalog loads asynchronously after mount. On a cold load or refresh
+  // of a vendor deep-link, `vendors` is briefly empty — show a loading state instead
+  // of a false "not registered on this campus catalog" error. Only report not-found
+  // once the catalog has actually loaded (vendors present) but this id isn't among them.
+  if (!vendor && vendors.length === 0) {
+    return (
+      <AppShell activeTab="vendors">
+        <LoadingSkeleton.Detail />
+      </AppShell>
+    );
+  }
+
   if (!vendor) {
     return (
       <AppShell activeTab="vendors">
         <div className="text-center py-12 bg-white rounded-2xl border border-red-200">
           <ShieldAlert className="w-12 h-12 text-danger mx-auto mb-3" />
-          <p className="text-sm font-bold text-emerald-strong">Vendor ID '{vendorId}' is not registered on this campus catalog.</p>
+          <p className="text-sm font-bold text-emerald-strong">This vendor isn't available on your campus right now.</p>
           <button onClick={() => navigateTo('/vendors')} className="mt-4 px-4 py-2 bg-emerald-deep text-white rounded-xl text-xs font-bold cursor-pointer">
             Back to Vendors
           </button>

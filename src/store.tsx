@@ -942,7 +942,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
         const [slotsList, locs] = await Promise.all([
           apiRequest(`/campuses/${cId}/delivery-slots`, 'GET').catch(() => []),
-          apiRequest(`/campuses/${cId}/locations`, 'GET')
+          // Guard: a locations failure must not reject the whole Promise.all and
+          // abort catalog loading before vendors/menus are ever set.
+          apiRequest(`/campuses/${cId}/locations`, 'GET').catch(() => [])
         ]);
         const mappedSlots = Array.isArray(slotsList) ? slotsList.map(mapSlot) : [];
         setDeliverySlots(mappedSlots);
