@@ -32,7 +32,9 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
     toggleFavoriteItem,
     menuItemReviews,
     createMenuItemReview,
-    vendors
+    vendors,
+    currentDate,
+    currentSlotId
   } = useMealDirect();
 
   // Multi-select "order form" state: menuItemId -> chosen quantity. Items here are
@@ -70,13 +72,20 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
 
   useEffect(() => {
     setIsLoading(true);
-    publicCatalogRequest(`/catalog/vendors/${encodeURIComponent(vendorId)}/menu`)
+    // Stock (remainingQuantity) is tracked per delivery date + slot. Pass the
+    // currently selected date/slot so the menu reflects real availability —
+    // without them the backend returns 0 remaining and every item shows "Sold out".
+    const params = new URLSearchParams();
+    if (currentDate) params.set('date', currentDate);
+    if (currentSlotId) params.set('slotId', currentSlotId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    publicCatalogRequest(`/catalog/vendors/${encodeURIComponent(vendorId)}/menu${qs}`)
       .then(items => {
         setMenuItems(Array.isArray(items) ? items.map((it: any) => mapMenuItem(it, vendorId)) : []);
         setIsLoading(false);
       })
       .catch(() => setIsLoading(false));
-  }, [vendorId]);
+  }, [vendorId, currentDate, currentSlotId]);
 
   const vendor = vendors.find(v => v.id === vendorId);
 

@@ -961,9 +961,16 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
         // Aggregate menus across vendors so cart/checkout pricing + validation resolve.
         // Tag each item with its vendor id so favorites/most-ordered can resolve the vendor.
+        // Stock (remainingQuantity) is per delivery date + slot, so pass the selected
+        // date/slot — otherwise the backend returns 0 remaining and items look "sold out".
+        const effSlotId = mappedSlots.some(s => s.id === currentSlotId) ? currentSlotId : mappedSlots[0]?.id;
+        const menuParams = new URLSearchParams();
+        if (currentDate) menuParams.set('date', currentDate);
+        if (effSlotId) menuParams.set('slotId', effSlotId);
+        const menuQs = menuParams.toString() ? `?${menuParams.toString()}` : '';
         const menusNested = await Promise.all(
           vendorList.map(async v => {
-            const items = await publicCatalogRequest(`/catalog/vendors/${encodeURIComponent(v.id)}/menu`).catch(() => []);
+            const items = await publicCatalogRequest(`/catalog/vendors/${encodeURIComponent(v.id)}/menu${menuQs}`).catch(() => []);
             return Array.isArray(items) ? items.map((it: any) => mapMenuItem(it, v.id)) : [];
           })
         );
