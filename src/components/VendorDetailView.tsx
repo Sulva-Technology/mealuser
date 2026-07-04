@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useMealDirect, apiRequest, mapMenuItem, publicCatalogRequest } from '../store';
+import { isSlotAvailable } from '../utils/helpers';
 import { AppShell, GlassPanel, Currency, PortionsBadge } from './CommonUI';
 import { LoadingSkeleton } from './LoadingSkeleton';
-import { ArrowLeft, Clock, Star, Plus, Minus, ShoppingCart, Info, ShieldAlert, Trash2, Flame, Sparkles, Heart, Check } from 'lucide-react';
+import { ArrowLeft, Clock, Star, Plus, Minus, ShoppingCart, Info, ShieldAlert, Trash2, Flame, Sparkles, Heart, Check, Calendar } from 'lucide-react';
 import { CartItem, MenuItem } from '../types';
 import { resolveImage, handleImageError } from '../utils/images';
 
@@ -34,8 +35,17 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
     createMenuItemReview,
     vendors,
     currentDate,
-    currentSlotId
+    currentSlotId,
+    currentLocationId,
+    deliverySlots,
+    setCurrentDateTimeLocation,
+    user
   } = useMealDirect();
+
+  const activeLocId = currentLocationId || user?.defaultLocationId || '';
+  const handleSlotSelect = (slotId: string) => {
+    setCurrentDateTimeLocation(currentDate, slotId, activeLocId);
+  };
 
   // Multi-select "order form" state: menuItemId -> chosen quantity. Items here are
   // staged and committed to the cart together via the single Add-all button.
@@ -285,10 +295,47 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
             </div>
           </section>
 
+          {/* Delivery slot picker — lets you set the timeslot without going back to
+              Home. Stock (and therefore the visible menu) is scoped to this slot. */}
+          {deliverySlots.length > 0 && (
+            <section className="mb-6 bg-white rounded-3xl p-5 border border-emerald-deep/8" id="vendor_slot_selector">
+              <h3 className="font-display font-medium text-sm text-emerald-strong flex items-center gap-1.5 mb-3">
+                <Calendar className="w-4 h-4 text-emerald-deep" />
+                Delivery slot
+              </h3>
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">
+                {deliverySlots.map(slot => {
+                  const isOpen = isSlotAvailable(slot.time, currentDate);
+                  const isSelected = currentSlotId === slot.id;
+                  const reason = !isOpen ? 'CLOSED' : isSelected ? 'ACTIVE' : 'OPEN';
+                  return (
+                    <button
+                      key={slot.id}
+                      onClick={() => isOpen && handleSlotSelect(slot.id)}
+                      disabled={!isOpen}
+                      title={!isOpen ? 'Ordering closed — slots lock 60 mins before delivery' : undefined}
+                      className={`px-3 py-3 rounded-2xl transition flex flex-col items-center justify-center gap-0.5 text-center border ${
+                        !isOpen
+                          ? 'bg-white border-ink-deep/5 opacity-50 cursor-not-allowed'
+                          : isSelected
+                          ? 'bg-emerald-deep text-white border-emerald-deep shadow-lg shadow-emerald-deep/20'
+                          : 'bg-white border-ink-deep/5 hover:border-emerald-deep/40 cursor-pointer'
+                      }`}
+                    >
+                      <span className={`text-xs font-bold ${!isOpen ? 'text-muted-grey/60' : isSelected ? 'text-white' : 'text-ink-deep'}`}>{slot.time}</span>
+                      <span className={`text-[9px] font-bold ${!isOpen ? 'text-red-500' : isSelected ? 'text-white/90' : 'text-emerald-deep'}`}>{reason}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {/* Menu items grouped by category — multi-select order form */}
           {menuItems.length === 0 ? (
             <div className="text-center py-12 bg-white rounded-2xl border border-emerald-deep/8">
               <p className="text-sm font-bold text-emerald-strong">No menu items available for this vendor yet.</p>
+              <p className="text-xs text-muted-grey mt-1.5">Try picking a different delivery slot above.</p>
             </div>
           ) : (
             <form

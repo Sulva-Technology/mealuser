@@ -20,6 +20,7 @@ import {
   ServerQuote,
   PaymentStatusResult
 } from './types';
+import { isSlotAvailable } from './utils/helpers';
 import { triggerVibration, VIBE_PATTERNS } from './utils/vibe';
 import { setMonitoringUser } from './utils/monitoring';
 import { getMessagingIfSupported } from './utils/firebase';
@@ -968,9 +969,13 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setDeliverySlots(mappedSlots);
         setLocations(Array.isArray(locs) ? locs.map(mapLocation) : []);
 
-        // Replace the legacy non-UUID default slot with a real one
+        // Replace the legacy non-UUID default slot with a real one. Prefer the first
+        // slot still OPEN for today — defaulting to mappedSlots[0] (earliest, often
+        // already closed) makes vendor menus load against a past slot and come back
+        // empty ("blank" menu). Fall back to the first slot if none are open.
         if (mappedSlots.length) {
-          setCurrentSlotId(prev => (mappedSlots.some(s => s.id === prev) ? prev : mappedSlots[0].id));
+          const firstOpen = mappedSlots.find(s => isSlotAvailable(s.time, currentDate));
+          setCurrentSlotId(prev => (mappedSlots.some(s => s.id === prev) ? prev : (firstOpen?.id || mappedSlots[0].id)));
         }
 
         const vends = await publicCatalogRequest(`/catalog/vendors?campusId=${encodeURIComponent(cId)}`);
@@ -983,7 +988,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         // Tag each item with its vendor id so favorites/most-ordered can resolve the vendor.
         // Stock (remainingQuantity) is per delivery date + slot, so pass the selected
         // date/slot — otherwise the backend returns 0 remaining and items look "sold out".
-        const effSlotId = mappedSlots.some(s => s.id === currentSlotId) ? currentSlotId : mappedSlots[0]?.id;
+        const effSlotId = mappedSlots.some(s => s.id === currentSlotId)
+          ? currentSlotId
+          : (mappedSlots.find(s => isSlotAvailable(s.time, currentDate))?.id || mappedSlots[0]?.id);
         const menuParams = new URLSearchParams();
         if (currentDate) menuParams.set('date', currentDate);
         if (effSlotId) menuParams.set('slotId', effSlotId);
