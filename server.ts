@@ -333,14 +333,17 @@ export function createApp(options: CreateAppOptions = {}) {
       '/api/public/campuses/:campusId/locations',
       '/api/public/campuses/:campusId/delivery-slots',
       '/api/public/catalog/vendors',
+      '/api/public/catalog/vendors/:vendorId',
       '/api/public/catalog/vendors/:vendorId/menu'
     ],
     async (req, res) => {
       const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
       let targetUrl: string;
 
-      if (req.path.startsWith('/api/public/catalog/vendors/')) {
+      if (req.path.endsWith('/menu')) {
         targetUrl = `${backendUrl}/v1/catalog/vendors/${encodeURIComponent(req.params.vendorId)}/menu${query}`;
+      } else if (req.path.startsWith('/api/public/catalog/vendors/')) {
+        targetUrl = `${backendUrl}/v1/catalog/vendors/${encodeURIComponent(req.params.vendorId)}${query}`;
       } else if (req.path === '/api/public/catalog/vendors') {
         targetUrl = `${backendUrl}/v1/catalog/vendors${query}`;
       } else {
