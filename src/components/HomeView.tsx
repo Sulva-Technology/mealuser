@@ -287,9 +287,15 @@ export const HomeView: React.FC = () => {
                     <p className="text-[10px] text-muted-grey truncate">{v.description}</p>
                   </div>
                   <div className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-ink-deep">
-                    <Star className="w-3.5 h-3.5 text-mango-warm fill-mango-warm" />
-                    <span className="numeric-tabular">{(v.rating ?? 0).toFixed(1)}</span>
-                    <span className="text-muted-grey font-semibold">({v.reviewCount})</span>
+                    {v.reviewCount > 0 ? (
+                      <>
+                        <Star className="w-3.5 h-3.5 text-mango-warm fill-mango-warm" />
+                        <span className="numeric-tabular">{(v.rating ?? 0).toFixed(1)}</span>
+                        <span className="text-muted-grey font-semibold">({v.reviewCount})</span>
+                      </>
+                    ) : (
+                      <span className="text-emerald-deep font-bold text-[10px] uppercase tracking-wide">New</span>
+                    )}
                   </div>
                 </button>
               ))}
@@ -528,8 +534,14 @@ export const HomeView: React.FC = () => {
                           className="w-full h-full object-cover transition duration-300 hover:scale-105"
                         />
                         <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-lg text-[10px] font-bold text-mango-warm flex items-center gap-1 shadow-sm border border-ink-deep/5">
-                          ★ <span className="numeric-tabular text-ink-deep font-bold">{(v.rating ?? 0).toFixed(1)}</span>
-                          <span className="text-muted-grey">({v.reviewCount})</span>
+                          {v.reviewCount > 0 ? (
+                            <>
+                              ★ <span className="numeric-tabular text-ink-deep font-bold">{(v.rating ?? 0).toFixed(1)}</span>
+                              <span className="text-muted-grey">({v.reviewCount})</span>
+                            </>
+                          ) : (
+                            <span className="text-emerald-deep font-bold">New</span>
+                          )}
                         </div>
                       </div>
 

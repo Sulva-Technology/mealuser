@@ -169,7 +169,11 @@ export const VendorsView: React.FC = () => {
                             <div className="min-w-0">
                               <h5 className="text-[11.5px] font-bold text-ink-deep flex items-center gap-1.5">
                                 {v.name}
-                                <span className="text-[9px] text-mango-warm font-bold">★ {(v.rating ?? 0).toFixed(1)}</span>
+                                {v.reviewCount > 0 ? (
+                                  <span className="text-[9px] text-mango-warm font-bold">★ {(v.rating ?? 0).toFixed(1)}</span>
+                                ) : (
+                                  <span className="text-[9px] text-emerald-deep font-bold uppercase tracking-wide">New</span>
+                                )}
                               </h5>
                               <p className="text-[10px] text-muted-grey truncate">{v.description}</p>
                             </div>
@@ -394,7 +398,11 @@ export const VendorsView: React.FC = () => {
                         className="w-full h-full object-cover transition duration-300 hover:scale-105"
                       />
                       <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-lg text-[10px] font-bold text-mango-warm flex items-center gap-1 shadow-xs border border-ink-deep/5">
-                        ★ <span className="numeric-tabular text-ink-deep font-bold">{(v.rating ?? 0).toFixed(1)}</span>
+                        {v.reviewCount > 0 ? (
+                          <>★ <span className="numeric-tabular text-ink-deep font-bold">{(v.rating ?? 0).toFixed(1)}</span></>
+                        ) : (
+                          <span className="text-emerald-deep font-bold">New</span>
+                        )}
                       </div>
                     </div>
 

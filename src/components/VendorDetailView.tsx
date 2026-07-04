@@ -292,9 +292,15 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
 
               <div className="p-4 px-6 bg-neutral-50/50 flex flex-wrap items-center justify-between gap-4 text-xs font-semibold text-muted-grey">
                 <div className="flex items-center gap-1">
-                  <Star className="w-4 h-4 fill-mango-warm stroke-mango-warm text-mango-warm" />
-                  <span className="text-ink-deep font-bold">{(vendor.rating ?? 0).toFixed(1)}</span>
-                  <span>({vendor.reviewCount ?? 0} total campus ratings)</span>
+                  {(vendor.reviewCount ?? 0) > 0 ? (
+                    <>
+                      <Star className="w-4 h-4 fill-mango-warm stroke-mango-warm text-mango-warm" />
+                      <span className="text-ink-deep font-bold">{(vendor.rating ?? 0).toFixed(1)}</span>
+                      <span>({vendor.reviewCount} total campus ratings)</span>
+                    </>
+                  ) : (
+                    <span className="text-emerald-deep font-bold uppercase tracking-wide">New · no ratings yet</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-emerald-deep" />
