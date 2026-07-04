@@ -75,9 +75,14 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
     // Stock (remainingQuantity) is tracked per delivery date + slot. Pass the
     // currently selected date/slot so the menu reflects real availability —
     // without them the backend returns 0 remaining and every item shows "Sold out".
+    // Only send slotId when it's a real slot UUID. The store's default is the
+    // legacy placeholder "slot_12" until campus slots load; the backend rejects
+    // that with 400 "slotId must be a UUID", which the catch below would swallow
+    // into an empty menu ("No menu items available") even when the vendor has food.
+    const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
     const params = new URLSearchParams();
     if (currentDate) params.set('date', currentDate);
-    if (currentSlotId) params.set('slotId', currentSlotId);
+    if (currentSlotId && isUuid(currentSlotId)) params.set('slotId', currentSlotId);
     const qs = params.toString() ? `?${params.toString()}` : '';
     publicCatalogRequest(`/catalog/vendors/${encodeURIComponent(vendorId)}/menu${qs}`)
       .then(items => {

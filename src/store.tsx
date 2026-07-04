@@ -612,6 +612,17 @@ export function mapSlot(raw: any): DeliverySlot {
   };
 }
 
+// The public catalog is expected to only serve active vendors, but defend against
+// the backend leaking a suspended/deactivated/pending kitchen: never show a vendor
+// whose payload explicitly reports a non-active status or active:false. Vendors with
+// no status field (the documented CatalogVendorDto shape) are treated as visible.
+export function isVendorPubliclyVisible(raw: any): boolean {
+  if (raw?.active === false) return false;
+  const status = String(raw?.status ?? '').toLowerCase();
+  if (status && status !== 'approved' && status !== 'active') return false;
+  return true;
+}
+
 // Normalize a backend CatalogVendorDto into the client Vendor shape (with safe defaults
 // for fields the catalog endpoint doesn't supply, e.g. rating/reviewCount).
 export function mapVendor(raw: any): Vendor {
@@ -958,7 +969,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }
 
         const vends = await publicCatalogRequest(`/catalog/vendors?campusId=${encodeURIComponent(cId)}`);
-        const vendorList: Vendor[] = Array.isArray(vends) ? vends.map(mapVendor) : [];
+        const vendorList: Vendor[] = Array.isArray(vends)
+          ? vends.filter(isVendorPubliclyVisible).map(mapVendor)
+          : [];
         setVendors(vendorList);
 
         // Aggregate menus across vendors so cart/checkout pricing + validation resolve.
