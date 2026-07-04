@@ -189,11 +189,17 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
   // Commit the staged multi-select form to the cart. If a cart from another vendor
   // exists, defer to the replace-cart confirmation first.
   const handleAddSelected = () => {
-    const items: CartItem[] = Object.entries(selection).map(([menuItemId, quantity]) => ({
-      menuItemId,
-      quantity,
-      spoonsCount: cartItemsMap[menuItemId]?.spoonsCount ?? 1
-    }));
+    const items: CartItem[] = Object.entries(selection).map(([menuItemId, quantity]) => {
+      const mi = menuItems.find(m => m.id === menuItemId);
+      return {
+        menuItemId,
+        quantity,
+        spoonsCount: cartItemsMap[menuItemId]?.spoonsCount ?? 1,
+        name: mi?.name,
+        priceKobo: mi?.priceKobo,
+        imageUrl: mi?.imageUrl
+      };
+    });
     if (!items.length) return;
 
     if (cart && cart.vendorId !== vendorId) {
@@ -239,7 +245,10 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
     const payload: CartItem = {
       menuItemId: selectedItem.id,
       quantity: existing ? existing.quantity : 1,
-      spoonsCount: spoonCountTemp
+      spoonsCount: spoonCountTemp,
+      name: selectedItem.name,
+      priceKobo: selectedItem.priceKobo,
+      imageUrl: selectedItem.imageUrl
     };
 
     if (cart && cart.vendorId !== vendorId) {

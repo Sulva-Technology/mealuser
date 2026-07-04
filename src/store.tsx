@@ -1380,12 +1380,17 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     cart.items.forEach(cItem => {
       const dbItem = menuItems.find(it => it.id === cItem.menuItemId);
-      if (dbItem) {
-        subtotalKobo += dbItem.priceKobo * cItem.quantity;
+      // Fall back to the add-time snapshot when the live catalog doesn't carry the
+      // item (slot/date-scoped menu can return empty). Otherwise the row was silently
+      // dropped and the whole cart looked empty with a ₦0 subtotal.
+      const priceKobo = dbItem?.priceKobo ?? cItem.priceKobo;
+      const name = dbItem?.name ?? cItem.name;
+      if (priceKobo !== undefined) {
+        subtotalKobo += priceKobo * cItem.quantity;
         spoonCount += cItem.spoonsCount;
         itemCount += cItem.quantity;
         if (cItem.spoonsCount > 3) {
-          errors.push(`Takeaway item '${dbItem.name}' exceeds the maximum allowed 3 spoons limit.`);
+          errors.push(`Takeaway item '${name || cItem.menuItemId}' exceeds the maximum allowed 3 spoons limit.`);
         }
       } else {
         errors.push(`Item code '${cItem.menuItemId}' could not be validated.`);
@@ -1637,7 +1642,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const newItems: CartItem[] = targetOrder.items.map(it => ({
       menuItemId: it.menuItemId,
       quantity: it.quantity,
-      spoonsCount: it.spoonsCount
+      spoonsCount: it.spoonsCount,
+      name: it.name,
+      priceKobo: it.priceKobo
     }));
 
     setCart({

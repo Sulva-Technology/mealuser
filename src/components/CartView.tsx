@@ -261,20 +261,26 @@ export const CartView: React.FC = () => {
             <div className="divide-y divide-emerald-deep/8">
               {cart.items.map(cartItem => {
                 const dbItem = MENU_ITEMS.find(it => it.id === cartItem.menuItemId);
-                if (!dbItem) return null;
+                // Fall back to the add-time snapshot so items never vanish when the
+                // live catalog is empty for the selected slot/date. Only drop a row
+                // if we truly have no data (no catalog hit and no snapshot).
+                const name = dbItem?.name ?? cartItem.name;
+                const priceKobo = dbItem?.priceKobo ?? cartItem.priceKobo;
+                const imageUrl = dbItem?.imageUrl ?? cartItem.imageUrl;
+                if (!name || priceKobo === undefined) return null;
 
-                const itemTotalKobo = dbItem.priceKobo * cartItem.quantity;
+                const itemTotalKobo = priceKobo * cartItem.quantity;
                 const soldOut = unavailableItems.some(it => it.menuItemId === cartItem.menuItemId);
 
                 return (
                   <div key={cartItem.menuItemId} className="py-4.5 first:pt-0 last:pb-0 flex gap-4">
                     <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-neutral-100">
-                      <img src={resolveImage(dbItem.imageUrl, dbItem.name)} onError={handleImageError(dbItem.name)} alt={dbItem.name} className="w-full h-full object-cover" />
+                      <img src={resolveImage(imageUrl, name)} onError={handleImageError(name)} alt={name} className="w-full h-full object-cover" />
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
-                        <h4 className="text-xs font-bold text-emerald-strong truncate">{dbItem.name}</h4>
+                        <h4 className="text-xs font-bold text-emerald-strong truncate">{name}</h4>
                         <Currency kobo={itemTotalKobo} className="text-xs text-ink-deep font-bold" />
                       </div>
 

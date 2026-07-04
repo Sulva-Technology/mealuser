@@ -44,6 +44,13 @@ export interface CartItem {
   menuItemId: string;
   quantity: number;
   spoonsCount: number; // up to 3 units as per business rules (plastic spoons)
+  // Display snapshot captured at add-time. The global catalog is slot/date-scoped
+  // and can come back empty (e.g. a closed slot), which used to make cart rows
+  // resolve to nothing and vanish. These let the cart render/price itself without
+  // depending on the live catalog; the server quote stays the pricing authority.
+  name?: string;
+  priceKobo?: number;
+  imageUrl?: string;
 }
 
 export interface Cart {

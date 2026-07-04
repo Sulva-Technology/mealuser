@@ -597,7 +597,7 @@ export const HomeView: React.FC = () => {
                       return;
                     }
                     
-                    addToCart(itemVendorId, { menuItemId: item.id, quantity: 1, spoonsCount: 1 });
+                    addToCart(itemVendorId, { menuItemId: item.id, quantity: 1, spoonsCount: 1, name: item.name, priceKobo: item.priceKobo, imageUrl: item.imageUrl });
                   };
 
                   return (
