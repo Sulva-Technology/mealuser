@@ -12,6 +12,7 @@ import { OrderDetailView } from "./components/OrderDetailView";
 import { OrdersView } from "./components/OrdersView";
 import { PaymentStatusView } from "./components/PaymentStatusView";
 import { Receipt } from "./components/Receipt";
+import { ResetPasswordView } from "./components/ResetPasswordView";
 import { MealDirectProvider, useMealDirect } from "./store";
 
 const CartView = React.lazy(() => import("./components/CartView").then(module => ({ default: module.CartView })));
@@ -29,10 +30,17 @@ const RouteFallback = () => (
 );
 
 const RouteDispatcher: React.FC = () => {
-	const { router, user } = useMealDirect();
+	const { router, user, passwordRecovery } = useMealDirect();
 	const { path, params } = router;
 
 	const renderRoute = () => {
+		// Password-reset landing (opened via the emailed Supabase link): show the
+		// choose-a-new-password flow. Takes precedence over the auth guard since the
+		// user isn't signed in yet.
+		if (passwordRecovery) {
+			return <ResetPasswordView />;
+		}
+
 		// Auth check guard: redirect unauthenticated users to login
 		if (!user) {
 			return <AuthView />;

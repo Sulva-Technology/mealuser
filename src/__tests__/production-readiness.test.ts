@@ -332,6 +332,32 @@ describe('BFF auth and CSRF behavior', () => {
     expect(cookies).toContain('md_csrf=');
   });
 
+  it('forwards the recovery token to the backend on update-password without minting cookies', async () => {
+    const seen: Array<{ url: string; body: unknown }> = [];
+    const app = createApp({
+      backendUrl: 'https://backend.test',
+      isProd: true,
+      fetchImpl: async (input, init) => {
+        seen.push({ url: String(input), body: JSON.parse(String(init?.body ?? '{}')) });
+        return jsonResponse({ message: 'Your password has been updated. You can now sign in.' });
+      }
+    });
+
+    const res = await request(app)
+      .post('/api/auth/update-password')
+      .send({ accessToken: 'recovery-token', password: 'NewPassword123!' })
+      .expect(200);
+
+    expect(res.body.message).toMatch(/updated/i);
+    expect(setCookieHeader(res)).toBe('');
+    expect(seen).toEqual([
+      {
+        url: 'https://backend.test/v1/auth/update-password',
+        body: { accessToken: 'recovery-token', password: 'NewPassword123!' }
+      }
+    ]);
+  });
+
   it('forwards session cookies as bearer auth and requires CSRF for mutating requests', async () => {
     const seen: Array<{ url: string; auth?: string; csrf?: string }> = [];
     const app = createApp({

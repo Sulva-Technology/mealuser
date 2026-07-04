@@ -145,8 +145,9 @@ export const AuthView: React.FC = () => {
     );
   }
 
-  // Password reset — link sent. The actual new-password entry happens on the page
-  // the emailed Supabase link opens; we can't complete it in-app (no client SDK).
+  // Password reset — link sent. Opening the emailed link returns the user to
+  // /auth/callback, where ResetPasswordView (driven by store.passwordRecovery)
+  // lets them choose a new password.
   if (resetSentEmail) {
     return (
       <div className="min-h-screen bg-canvas-ivory flex items-center justify-center p-4">

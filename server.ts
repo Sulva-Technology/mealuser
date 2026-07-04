@@ -302,6 +302,25 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  // Complete a password reset. The front-end posts the recovery access token it
+  // received on /auth/callback plus the new password; the backend validates the
+  // token and sets the password. No session/cookies are minted — the user signs
+  // in fresh afterwards with the new password.
+  app.post('/api/auth/update-password', async (req, res) => {
+    try {
+      const backendResponse = await fetchImpl(`${backendUrl}/v1/auth/update-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(req.body || {})
+      });
+      const json = await readBackendJson(backendResponse);
+      res.status(backendResponse.status).json(json);
+    } catch (error) {
+      console.error('Update-password proxy failed:', error);
+      res.status(502).json({ error: { code: 'AUTH_PROXY_FAILED', message: 'Authentication service unavailable.' } });
+    }
+  });
+
   app.post('/api/auth/logout', async (req, res) => {
     const cookies = parseCookies(req.headers.cookie);
     try {

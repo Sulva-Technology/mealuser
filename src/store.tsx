@@ -254,6 +254,12 @@ interface MealDirectContextType {
   signUp: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
   requestPasswordReset: (email: string) => Promise<void>;
   resendConfirmation: (email: string) => Promise<void>;
+  // Set when the app is opened via a Supabase password-reset link (/auth/callback).
+  // `reset` → show the "choose a new password" form; `error` → the link was
+  // invalid/expired. Null in the normal app.
+  passwordRecovery: { mode: 'reset' } | { mode: 'error'; message: string } | null;
+  updatePassword: (newPassword: string) => Promise<void>;
+  exitPasswordRecovery: () => void;
   completeOnboarding: (fullName: string, phone: string, campusId: string, locationId: string) => Promise<void>;
   updateProfile: (fullName: string, phone: string, campusId: string, defaultLocationId: string) => Promise<void>;
   uploadAvatar: (file: File) => Promise<void>;
@@ -341,6 +347,13 @@ const MealDirectContext = createContext<MealDirectContextType | undefined>(undef
 // Helper to extract path & params (e.g. /vendors/ven_grill or /orders/ord_123/escalate)
 function parseLocation(): RouterState {
   const hash = window.location.hash || '#/';
+  // A Supabase auth callback lands with the session/error in the hash
+  // (#access_token=... / #error=...), which is not an app route. Treat it as the
+  // root so the router key stays stable while ResetPasswordView (driven by
+  // store.passwordRecovery) handles it.
+  if (hash.startsWith('#access_token') || hash.startsWith('#error')) {
+    return { path: '/', params: {} };
+  }
   const path = hash.replace('#', '').split('?')[0];
 
   const params: Record<string, string> = {};
@@ -361,6 +374,32 @@ function parseLocation(): RouterState {
   }
 
   return { path, params };
+}
+
+// Detect a Supabase auth callback landing (/auth/callback). After the user opens
+// the emailed recovery link, Supabase's /auth/v1/verify redirects here with the
+// session in the URL hash: `#access_token=...&type=recovery` on success, or
+// `#error=...&error_description=...` when the link is invalid/expired. Returns the
+// recovery access token to complete the password reset, an error to display, or
+// null when this isn't a recovery callback.
+function parsePasswordRecovery(): { token: string } | { error: string } | null {
+  const hash = window.location.hash || '';
+  if (!hash.includes('access_token') && !hash.includes('error')) return null;
+
+  const params = new URLSearchParams(hash.replace(/^#/, ''));
+  const accessToken = params.get('access_token');
+  const type = params.get('type');
+  const isRecoveryCallback = window.location.pathname === '/auth/callback' || type === 'recovery';
+
+  if (accessToken && (type === 'recovery' || (type === null && isRecoveryCallback))) {
+    return { token: accessToken };
+  }
+
+  const error = params.get('error_description') || params.get('error');
+  if (error && isRecoveryCallback) {
+    return { error };
+  }
+  return null;
 }
 
 // localStorage key holding the route to return to after the user signs back in.
@@ -674,6 +713,29 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Routing State
   const [router, setRouter] = useState<RouterState>(parseLocation());
+
+  // Password-reset landing state. Captured once from the URL hash on mount (see
+  // parsePasswordRecovery) so the reset token never lingers in the address bar.
+  const [passwordRecovery, setPasswordRecovery] = useState<
+    { mode: 'reset' } | { mode: 'error'; message: string } | null
+  >(() => {
+    const parsed = parsePasswordRecovery();
+    if (!parsed) return null;
+    return 'token' in parsed
+      ? { mode: 'reset' }
+      : { mode: 'error', message: parsed.error || 'This reset link is invalid or has expired.' };
+  });
+  // Hold the recovery token in a ref (not state/localStorage) so it stays out of
+  // the URL and persisted storage; it's single-use for the update-password call.
+  const recoveryTokenRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    const parsed = parsePasswordRecovery();
+    if (parsed && 'token' in parsed) recoveryTokenRef.current = parsed.token;
+    // Strip the token/error from the address bar so a refresh or shoulder-surf
+    // can't reuse it, and the router falls back to a clean state.
+    if (parsed) window.history.replaceState(null, '', '/');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Global Context state: Selection overrides
   // Default to today (same-day ordering). Use the LOCAL calendar date, not the UTC
@@ -1110,6 +1172,32 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       console.error(err);
       throw new Error(err.message || 'Could not send reset email. Please try again.');
     }
+  };
+
+  // Complete a password reset: send the recovery token captured from /auth/callback
+  // plus the new password to the backend, which validates the token and sets it.
+  const updatePassword = async (newPassword: string) => {
+    const token = recoveryTokenRef.current;
+    if (!token) {
+      throw new Error('Your reset link is invalid or has expired. Please request a new one.');
+    }
+    try {
+      await authRequest('/update-password', 'POST', { accessToken: token, password: newPassword });
+      // Token is single-use; drop it so it can't be replayed.
+      recoveryTokenRef.current = null;
+    } catch (err: any) {
+      if (err?.status === 401) {
+        throw new Error('Your reset link is invalid or has expired. Please request a new one.');
+      }
+      throw new Error(err.message || 'Could not update your password. Please try again.');
+    }
+  };
+
+  // Leave the reset flow and return to the sign-in screen (user is unauthenticated).
+  const exitPasswordRecovery = () => {
+    recoveryTokenRef.current = null;
+    setPasswordRecovery(null);
+    navigateTo('/');
   };
 
   // Re-send the email-confirmation link for an account that signed up but hasn't
@@ -1906,6 +1994,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         signUp,
         requestPasswordReset,
         resendConfirmation,
+        passwordRecovery,
+        updatePassword,
+        exitPasswordRecovery,
         completeOnboarding,
         updateProfile,
         uploadAvatar,
