@@ -4,7 +4,7 @@ import { AppShell, GlassPanel, Currency } from './CommonUI';
 import { LogIn, UserPlus, AlertCircle, MailCheck, KeyRound, ArrowLeft } from 'lucide-react';
 
 export const AuthView: React.FC = () => {
-  const { signIn, signUp, requestPasswordReset } = useMealDirect();
+  const { signIn, signUp, requestPasswordReset, resendConfirmation } = useMealDirect();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,6 +17,23 @@ export const AuthView: React.FC = () => {
   // `resetSentEmail` (once set) swaps that for the "check your inbox" confirmation.
   const [isReset, setIsReset] = useState(false);
   const [resetSentEmail, setResetSentEmail] = useState<string | null>(null);
+  // Resend-confirmation state for the "confirm your email" screen.
+  const [isResending, setIsResending] = useState(false);
+  const [resent, setResent] = useState(false);
+
+  const handleResendConfirmation = async () => {
+    if (!pendingEmail) return;
+    setError(null);
+    setIsResending(true);
+    try {
+      await resendConfirmation(pendingEmail);
+      setResent(true);
+    } catch (err: any) {
+      setError(err.message || 'Could not resend the confirmation email');
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,6 +102,29 @@ export const AuthView: React.FC = () => {
             <div className="text-[11px] text-muted-grey bg-neutral-50 border border-neutral-100 rounded-xl px-3 py-2.5 leading-relaxed">
               Can’t find it? Check your <strong>Spam / Promotions</strong> folder. The link can take a minute to arrive.
             </div>
+
+            {error && (
+              <div className="w-full p-3 bg-danger/10 border border-danger/20 text-xs text-danger font-semibold rounded-2xl flex items-start gap-2.5 text-left animate-fade-in">
+                <AlertCircle className="w-5 h-5 text-danger shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {resent ? (
+              <div className="w-full text-xs text-emerald-deep font-semibold bg-emerald-deep/10 border border-emerald-deep/20 rounded-2xl px-3 py-2.5">
+                If an account needs confirming, we’ve sent a fresh link.
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleResendConfirmation}
+                disabled={isResending}
+                className="text-xs font-bold text-emerald-deep hover:underline focus-visible:outline-none cursor-pointer disabled:opacity-60"
+              >
+                {isResending ? 'Resending…' : "Didn’t get it? Resend confirmation email"}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => {
@@ -92,6 +132,7 @@ export const AuthView: React.FC = () => {
                 setIsLogin(true);
                 setPassword('');
                 setError(null);
+                setResent(false);
               }}
               className="w-full flex items-center justify-center gap-2 bg-emerald-deep hover:bg-emerald-strong text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-emerald-deep/25 transition-all active:scale-[0.98] cursor-pointer"
             >

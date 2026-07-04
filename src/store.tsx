@@ -114,7 +114,11 @@ async function authRequest(path: string, method = 'POST', body: any = null): Pro
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.error?.message || errorData?.message || `HTTP ${response.status}`);
+    const err = new Error(errorData?.error?.message || errorData?.message || `HTTP ${response.status}`);
+    // Preserve the HTTP status so callers can distinguish e.g. 401 (bad creds)
+    // from 403 (valid creds, wrong portal) without parsing the message.
+    (err as any).status = response.status;
+    throw err;
   }
   if (response.status === 204) return null;
   return response.json();
@@ -248,6 +252,7 @@ interface MealDirectContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
   requestPasswordReset: (email: string) => Promise<void>;
+  resendConfirmation: (email: string) => Promise<void>;
   completeOnboarding: (fullName: string, phone: string, campusId: string, locationId: string) => Promise<void>;
   updateProfile: (fullName: string, phone: string, campusId: string, defaultLocationId: string) => Promise<void>;
   uploadAvatar: (file: File) => Promise<void>;
@@ -1050,7 +1055,13 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
     } catch (err: any) {
       console.error(err);
-      throw new Error(err.message || 'Error signing in');
+      // Unconfirmed-email sign-ins are routed to the "check your email" prompt by
+      // the caller (via isEmailUnconfirmedError on the message) — keep it intact.
+      if (isEmailUnconfirmedError(err?.message)) throw err;
+      // 401 = wrong email/password; 403 = valid credentials but the account isn't
+      // allowed on this portal — show the server's message verbatim. Keep distinct.
+      if (err?.status === 401) throw new Error('Invalid email or password.');
+      throw err;
     }
   };
 
@@ -1087,10 +1098,21 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // resolved promise just means "if that email has an account, a link is on its way".
   const requestPasswordReset = async (email: string) => {
     try {
-      await authRequest('/password-reset', 'POST', { email });
+      await authRequest('/password-reset', 'POST', { email, portal: 'customer' });
     } catch (err: any) {
       console.error(err);
       throw new Error(err.message || 'Could not send reset email. Please try again.');
+    }
+  };
+
+  // Re-send the email-confirmation link for an account that signed up but hasn't
+  // clicked through yet. Non-enumerating like password-reset (backend always 200s).
+  const resendConfirmation = async (email: string) => {
+    try {
+      await authRequest('/resend-confirmation', 'POST', { email, portal: 'customer' });
+    } catch (err: any) {
+      console.error(err);
+      throw new Error(err.message || 'Could not resend the confirmation email. Please try again.');
     }
   };
 
@@ -1869,6 +1891,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         signIn,
         signUp,
         requestPasswordReset,
+        resendConfirmation,
         completeOnboarding,
         updateProfile,
         uploadAvatar,
