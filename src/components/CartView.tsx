@@ -526,7 +526,7 @@ export const CartView: React.FC = () => {
 
               {serverQuote && serverQuote.serviceFeeKobo > 0 && (
                 <div className="flex justify-between">
-                  <span>Service Fee:</span>
+                  <span>Takeaway fee:</span>
                   <Currency kobo={serverQuote.serviceFeeKobo} className="text-white font-bold" />
                 </div>
               )}

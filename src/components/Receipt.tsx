@@ -232,7 +232,7 @@ export const Receipt: React.FC<ReceiptProps> = ({ orderId }) => {
             </div>
             {derivedServiceFee > 0 && (
               <div className="flex justify-between">
-                <span className="text-muted-grey">Service fee</span>
+                <span className="text-muted-grey">Takeaway fee</span>
                 <Currency kobo={derivedServiceFee} className="font-semibold text-ink-deep" />
               </div>
             )}
