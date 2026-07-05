@@ -3,6 +3,7 @@ import { useMealDirect } from '../store';
 import { AppShell, GlassPanel, Currency, MessageModal } from './CommonUI';
 import { resolveImage, handleImageError } from '../utils/images';
 import { buildSupportMailto, LEGAL_LINKS } from '../utils/support';
+import { isSlotAvailable } from '../utils/helpers';
 import {
   Trash2,
   Calendar,
@@ -12,7 +13,6 @@ import {
   ArrowRight,
   Loader2,
   CreditCard,
-  ClipboardList,
   Lock
 } from 'lucide-react';
 
@@ -28,7 +28,6 @@ export const CartView: React.FC = () => {
     user,
     navigateTo,
     updateCartItemQuantity,
-    updateCartItemSpoons,
     removeFromCart,
     clearCart,
     getCartQuote,
@@ -51,7 +50,6 @@ export const CartView: React.FC = () => {
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
-  const [specialInstructions, setSpecialInstructions] = useState('');
   // Large-order surcharge acceptance. Required before checkout when the server
   // quote reports the total exceeds the ₦2,490 standard cap.
   const [acceptLargeOrderSurcharge, setAcceptLargeOrderSurcharge] = useState(false);
@@ -134,7 +132,11 @@ export const CartView: React.FC = () => {
     : [];
   const hasUnavailable = unavailableItems.length > 0;
 
-  const blockProceed = quote.spoonCount > 3 || hasUnavailable || isQuoteLoading || !isOnline || surchargeBlocksProceed;
+  // When online but the authoritative server quote never arrived, the shown total is
+  // only a local estimate (missing service fee/discount/surcharge). Block checkout so
+  // the user never pays against a wrong figure or hits a late backend rejection.
+  const quoteUnavailable = isOnline && !isQuoteLoading && !serverQuote;
+  const blockProceed = hasUnavailable || isQuoteLoading || !isOnline || surchargeBlocksProceed || quoteUnavailable;
 
   const handleApplyPromo = async () => {
     const code = promoInput.trim();
@@ -163,6 +165,10 @@ export const CartView: React.FC = () => {
     setQuoteError(null);
     if (!isOnline) {
       setQuoteError('Cannot proceed in offline cache mode. Internet connection is required for inventory verification.');
+      return;
+    }
+    if (quoteUnavailable) {
+      setQuoteError('We could not confirm live pricing and availability. Check your connection and try again.');
       return;
     }
     if (!quote.isValid) {
@@ -194,20 +200,24 @@ export const CartView: React.FC = () => {
 
     // Single consolidated create-order → initialize-payment path (guarded against
     // double submission in the store), so one tap can never make two orders.
-    checkoutAndPay(specialInstructions, appliedPromo || undefined, exceedsStandardCap && acceptLargeOrderSurcharge)
+    checkoutAndPay(undefined, appliedPromo || undefined, exceedsStandardCap && acceptLargeOrderSurcharge)
       .then(({ authorizationUrl }) => {
         window.location.href = authorizationUrl; // redirect out to Paystack
       })
       .catch(err => {
         setIsCreatingOrder(false);
-        // Backend rejects a large order when the surcharge wasn't accepted. Surface
-        // it inline near the toggle and force re-acceptance rather than a modal.
-        if (err?.code === 'VALIDATION_FAILED' || err?.status === 400) {
+        // Only the surcharge-acceptance rejection re-opens the toggle inline. The
+        // backend names the flag in its message, which is the reliable signal —
+        // matching on VALIDATION_FAILED/400 alone would swallow unrelated 400s
+        // (e.g. an orders_total_formula constraint failure) under a wrong prompt.
+        const msg: string = err?.message || '';
+        const isSurchargeRejection = /acceptLargeOrderSurcharge/i.test(msg);
+        if (isSurchargeRejection) {
           setAcceptLargeOrderSurcharge(false);
-          setQuoteError(err.message || 'Order total exceeds the standard ₦2,490 cap. Please accept the large-order surcharge to continue.');
+          setQuoteError('Order total exceeds the standard ₦2,490 cap. Please accept the large-order surcharge to continue.');
           return;
         }
-        setErrorMessage(err.message || 'We could not start checkout. Please try again.');
+        setErrorMessage(msg || 'We could not start checkout. Please try again.');
       });
   };
 
@@ -310,27 +320,6 @@ export const CartView: React.FC = () => {
                           <AlertTriangle className="w-2.5 h-2.5" /> Sold out for selected slot
                         </span>
                       )}
-
-                      {/* Customized Spoons counter */}
-                      <div className="flex items-center gap-1.5 mt-2 bg-neutral-50 px-2.5 py-1.5 rounded-lg border border-neutral-100 max-w-xs justify-between">
-                        <span className="text-[10px] text-muted-grey font-semibold">Takeaway Spoons limit:</span>
-
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => updateCartItemSpoons(cartItem.menuItemId, cartItem.spoonsCount - 1)}
-                            className="bg-neutral-200/50 hover:bg-neutral-200 w-5 h-5 rounded-md text-[10px] font-bold cursor-pointer transition flex items-center justify-center text-ink-deep"
-                          >
-                            -
-                          </button>
-                          <span className="text-[10px] font-mono font-bold text-emerald-strong w-4 text-center">{cartItem.spoonsCount}</span>
-                          <button
-                            onClick={() => updateCartItemSpoons(cartItem.menuItemId, cartItem.spoonsCount + 1)}
-                            className="bg-neutral-200/50 hover:bg-neutral-200 w-5 h-5 rounded-md text-[10px] font-bold cursor-pointer transition flex items-center justify-center text-ink-deep"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
 
                       {/* Quantity operations */}
                       <div className="flex items-center justify-between gap-4 mt-3">
@@ -440,11 +429,16 @@ export const CartView: React.FC = () => {
                   className={`w-full text-[11px] font-bold text-ink-deep bg-white border rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-emerald-deep cursor-pointer mt-1 ${hasUnavailable ? 'border-red-300' : 'border-neutral-200'}`}
                   id="cart_slot_picker"
                 >
-                  {DELIVERY_SLOTS.map(slot => (
-                    <option key={slot.id} value={slot.id}>
-                      {slot.label}
-                    </option>
-                  ))}
+                  {DELIVERY_SLOTS.map(slot => {
+                    // Slots lock 60 min before delivery. Disable closed ones so the user
+                    // can't select a past slot for today and hit a late backend rejection.
+                    const open = isSlotAvailable(slot.time, cart.deliveryDate);
+                    return (
+                      <option key={slot.id} value={slot.id} disabled={!open && slot.id !== cart.deliverySlotId}>
+                        {slot.label}{open ? '' : ' — closed'}
+                      </option>
+                    );
+                  })}
                 </select>
                 {hasUnavailable && (
                   <span className="text-[10px] font-bold text-danger mt-1 flex items-start gap-1">
@@ -488,57 +482,12 @@ export const CartView: React.FC = () => {
               ← Continue shopping / add more items
             </button>
           </GlassPanel>
-
-          {/* Special Delivery & Kitchen Instructions (moved from the old checkout page) */}
-          <GlassPanel className="p-6">
-            <div className="flex items-center gap-2 mb-3">
-              <ClipboardList className="w-4.5 h-4.5 text-emerald-deep" />
-              <h3 className="font-display font-bold text-sm text-emerald-strong">Special Delivery & Kitchen Instructions</h3>
-            </div>
-            <p className="text-xs text-muted-grey mb-3 leading-relaxed font-normal">
-              Optional — delivery gate codes, entrance directions, or food allergy requests for the kitchen staff.
-            </p>
-            <div className="relative">
-              <textarea
-                placeholder="e.g. Gate code is #5512. Hall 4 entrance. Allergy: Absolutely no peanuts or trace seafood elements, thank you!"
-                value={specialInstructions}
-                onChange={(e) => setSpecialInstructions(e.target.value)}
-                className="w-full text-xs font-semibold text-ink-deep bg-neutral-50/50 hover:bg-neutral-50 border border-emerald-deep/12 rounded-2xl p-3.5 min-h-[90px] pr-20 focus:ring-2 focus:ring-emerald-deep focus:outline-none focus:bg-white transition-all placeholder:text-muted-grey/60 placeholder:font-normal resize-none"
-                id="cart_special_instructions"
-                maxLength={400}
-              />
-              <span className="absolute bottom-3.5 right-3 text-[9px] font-mono font-black text-muted-grey bg-neutral-100 px-1.5 py-0.5 rounded">
-                {specialInstructions.length}/400 chars
-              </span>
-            </div>
-          </GlassPanel>
         </div>
 
         {/* Right Segment (Quoting & Payment) */}
         <div className="space-y-6">
           <GlassPanel className="p-6 bg-emerald-strong text-white border-t-4 border-t-mango-warm">
             <h3 className="font-display text-base font-bold mb-4 text-white">Cost summary</h3>
-
-            {/* Spoon Meter limit badge */}
-            <div className="mb-4 bg-emerald-deep/40 rounded-xl p-3 border border-white/8">
-              <div className="flex items-center justify-between text-[11px] font-bold mb-1">
-                <span>Plastic Spoons Count:</span>
-                <span className={quote.spoonCount > 3 ? 'text-danger font-black font-mono animate-pulse' : 'text-mango-warm'}>
-                  {quote.spoonCount} / 3 Max
-                </span>
-              </div>
-              <div className="w-full bg-emerald-strong/80 rounded-full h-1.5 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-300 ${quote.spoonCount > 3 ? 'bg-danger' : 'bg-mango-warm'}`}
-                  style={{ width: `${Math.min(100, (quote.spoonCount / 3) * 100)}%` }}
-                />
-              </div>
-              {quote.spoonCount > 3 && (
-                <span className="text-[9px] text-red-200 mt-1.5 block">
-                  🚨 Total requested spoons exceed the maximum allowable 3 spoons limit. Update countdown values.
-                </span>
-              )}
-            </div>
 
             <div className="space-y-3.5 text-xs text-white/80 pt-2 pb-4 border-b border-white/12">
               <div className="flex justify-between">
@@ -619,6 +568,13 @@ export const CartView: React.FC = () => {
             {hasUnavailable && (
               <div className="mb-3 p-3 bg-red-500/15 border border-red-300/30 rounded-xl text-[10px] text-red-100 font-semibold">
                 Out of stock for this date/slot: {unavailableItems.map(it => it.name).join(', ')}. Change the delivery slot or date above.
+              </div>
+            )}
+
+            {quoteUnavailable && (
+              <div className="mb-3 p-3 bg-red-500/15 border border-red-300/30 rounded-xl text-[10px] text-red-100 font-semibold flex items-start gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>We couldn't confirm live pricing and availability. The total above is only an estimate — reconnect or retry before paying.</span>
               </div>
             )}
 

@@ -25,7 +25,8 @@ import {
   CreditCard,
   Receipt as ReceiptIcon,
   ShieldCheck,
-  RotateCcw
+  RotateCcw,
+  KeyRound
 } from 'lucide-react';
 import { Escalation, OrderStatus } from '../types';
 
@@ -109,7 +110,11 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
 
   // Celebration state for delivered status trigger
   const [showDeliveredCelebration, setShowDeliveredCelebration] = useState(false);
-  
+
+  // Cancellation help modal. Declared with the other hooks — BEFORE any early return —
+  // so hook order stays stable when `order` resolves from null to found on a deep link.
+  const [showCancelModal, setShowCancelModal] = useState(false);
+
   // Find order
   const order = orders.find(o => o.id === orderId);
 
@@ -145,8 +150,6 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
 
   // Check related support tickets
   const relatedEscalations = escalations.filter(e => e.orderId === orderId);
-
-  const [showCancelModal, setShowCancelModal] = useState(false);
 
   const handleCopyOrderNumber = () => {
     navigator.clipboard.writeText(order.orderNumber);
@@ -468,6 +471,25 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
         <LiveTrackerPip order={order} />
       </section>
 
+      {/* Delivery confirmation code — shown only while out for delivery, when the
+          backend has issued the 4-digit code. Read aloud to the rider; no input needed. */}
+      {order.status === 'OUT_FOR_DELIVERY' && order.deliveryCode && (
+        <section className="mb-6 animate-fade-in" id="delivery_code_box">
+          <div className="rounded-2xl p-6 bg-emerald-deep text-white shadow-lg shadow-emerald-deep/20 border border-emerald-strong text-center">
+            <div className="flex items-center justify-center gap-1.5 mb-2">
+              <KeyRound className="w-4 h-4 text-mango-warm" />
+              <h4 className="text-[11px] font-bold uppercase tracking-wide text-mango-warm">Delivery confirmation code</h4>
+            </div>
+            <p className="text-[11px] text-white/80 leading-relaxed max-w-xs mx-auto">
+              Read this code to your rider to confirm delivery:
+            </p>
+            <div className="mt-3 font-mono font-black text-5xl sm:text-6xl tracking-[0.25em] select-all tabular-nums">
+              {order.deliveryCode}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* 2. Live status refresh — pulls the latest authoritative status from the backend */}
       {['CONFIRMED', 'CANCELLED', 'REFUNDED'].indexOf(order.status) === -1 && (
         <section className="mb-6" id="status_refresh_box">
@@ -594,7 +616,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
                   <div className="flex items-center justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <p className="font-bold text-emerald-strong truncate">{it.name}</p>
-                      <span className="text-[10px] text-muted-grey block mt-0.5">Spoons: {it.spoonsCount} • Qty: {it.quantity}</span>
+                      <span className="text-[10px] text-muted-grey block mt-0.5">Qty: {it.quantity}</span>
                     </div>
                     <Currency kobo={it.priceKobo * it.quantity} className="font-mono text-ink-deep font-bold shrink-0" />
                   </div>

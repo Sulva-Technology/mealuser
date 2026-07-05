@@ -43,7 +43,6 @@ export interface Vendor {
 export interface CartItem {
   menuItemId: string;
   quantity: number;
-  spoonsCount: number; // up to 3 units as per business rules (plastic spoons)
   // Display snapshot captured at add-time. The global catalog is slot/date-scoped
   // and can come back empty (e.g. a closed slot), which used to make cart rows
   // resolve to nothing and vanish. These let the cart render/price itself without
@@ -66,7 +65,6 @@ export interface OrderQuote {
   deliveryFeeKobo: number; // Flat ₦200 (20000 kobo)
   totalKobo: number;
   itemCount: number;
-  spoonCount: number;
   isValid: boolean;
   errors: string[];
 }
@@ -146,7 +144,6 @@ export interface Order {
     name: string;
     priceKobo: number;
     quantity: number;
-    spoonsCount: number;
   }[];
   subtotalKobo: number;
   deliveryFeeKobo: number;
@@ -155,6 +152,9 @@ export interface Order {
   totalKobo: number;
   status: OrderStatus;
   statusHistory: OrderStatusHistory[];
+  // 4-digit code the customer reads aloud to the rider to confirm delivery.
+  // Backend only populates it once the order is OUT_FOR_DELIVERY; null before that.
+  deliveryCode?: string | null;
   paymentReference?: string;
   requestId: string;
   createdAt: string;

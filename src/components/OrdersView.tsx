@@ -8,12 +8,24 @@ import { OrderStatus } from '../types';
 import emptyOrdersIllustration from '../assets/images/empty_orders_illustration_1781791218965.jpg';
 
 export const OrdersView: React.FC = () => {
-  const { orders, navigateTo, reorderOrder, reviews } = useMealDirect();
-  
+  const { orders, navigateTo, reorderOrder, reviews, cart, vendors, refreshUserData } = useMealDirect();
+
   // States
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'past'>('active');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  // Order id pending a reorder that would replace a cart from a different vendor.
+  const [reorderConfirmId, setReorderConfirmId] = useState<string | null>(null);
+
+  // Reorder replaces the whole cart (single-vendor rule). Confirm first when the cart
+  // holds items from another vendor so a tap can't silently wipe an in-progress order.
+  const handleReorderClick = (orderVendorId: string, orderId: string) => {
+    if (cart && cart.items.length > 0 && cart.vendorId !== orderVendorId) {
+      setReorderConfirmId(orderId);
+      return;
+    }
+    reorderOrder(orderId);
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -54,12 +66,13 @@ export const OrdersView: React.FC = () => {
 
   const handleRefresh = async () => {
     setIsLoading(true);
-    await new Promise<void>((resolve) => {
-      setTimeout(() => {
-        setIsLoading(false);
-        resolve();
-      }, 700);
-    });
+    try {
+      await refreshUserData();
+    } catch {
+      /* non-fatal: keep showing cached orders */
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -243,7 +256,7 @@ export const OrdersView: React.FC = () => {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        reorderOrder(order.id);
+                        handleReorderClick(order.vendorId, order.id);
                       }}
                       className="px-2.5 py-1 bg-emerald-deep text-white hover:bg-[#0c6544] rounded-lg flex items-center gap-1 cursor-pointer transition transform active:scale-95 text-[10px]"
                       title="Instantly copy this past meal to current shopping cart"
@@ -276,6 +289,36 @@ export const OrdersView: React.FC = () => {
           })
         )}
       </section>
+
+      {/* Reorder replace-cart confirmation */}
+      {reorderConfirmId && (
+        <dialog open className="fixed inset-0 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full border border-red-100 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center gap-2.5 text-danger font-bold text-sm">
+              <RotateCcw className="w-5 h-5 text-danger" />
+              <span>Replace current cart?</span>
+            </div>
+            <p className="text-xs text-muted-grey leading-relaxed">
+              Your cart has items from {cart ? (vendors.find(v => v.id === cart.vendorId)?.name || 'another kitchen') : 'another kitchen'}.
+              A takeaway can only hold one vendor, so reordering will discard your current cart.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setReorderConfirmId(null)}
+                className="flex-1 py-2.5 bg-neutral-50 hover:bg-neutral-100 text-muted-grey font-semibold text-xs rounded-xl transition cursor-pointer"
+              >
+                Keep cart
+              </button>
+              <button
+                onClick={() => { const id = reorderConfirmId; setReorderConfirmId(null); if (id) reorderOrder(id); }}
+                className="flex-1 py-2.5 bg-danger hover:bg-red-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-sm shadow-red-200"
+              >
+                Discard & Reorder
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
       </PullToRefresh>
     </AppShell>
   );

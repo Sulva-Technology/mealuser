@@ -200,13 +200,13 @@ describe('computeSpendHistory', () => {
       order({
         createdAt: '2026-06-22',
         totalKobo: 80000,
-        items: [{ menuItemId: 'm1', name: 'Garden Salad', priceKobo: 40000, quantity: 2, spoonsCount: 0 }]
+        items: [{ menuItemId: 'm1', name: 'Garden Salad', priceKobo: 40000, quantity: 2 }]
       }),
       order({
         status: 'CONFIRMED',
         createdAt: '2026-06-23',
         totalKobo: 20000,
-        items: [{ menuItemId: 'm2', name: 'Eba', priceKobo: 20000, quantity: 1, spoonsCount: 0 }]
+        items: [{ menuItemId: 'm2', name: 'Eba', priceKobo: 20000, quantity: 1 }]
       })
     ];
     const result = computeSpendHistory(orders, menuItems);

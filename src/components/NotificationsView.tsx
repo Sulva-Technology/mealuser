@@ -6,7 +6,7 @@ import { PullToRefresh } from './PullToRefresh';
 import { Bell, Check, MapPin, ChevronRight, CheckCircle2, ShieldAlert } from 'lucide-react';
 
 export const NotificationsView: React.FC = () => {
-  const { notifications, markNotificationRead, markAllNotificationsRead, navigateTo } = useMealDirect();
+  const { notifications, markNotificationRead, markAllNotificationsRead, navigateTo, refreshUserData } = useMealDirect();
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -42,12 +42,13 @@ export const NotificationsView: React.FC = () => {
 
   const handleRefresh = async () => {
     setIsLoading(true);
-    await new Promise<void>((resolve) => {
-      setTimeout(() => {
-        setIsLoading(false);
-        resolve();
-      }, 600);
-    });
+    try {
+      await refreshUserData();
+    } catch {
+      /* non-fatal: keep showing cached notifications */
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

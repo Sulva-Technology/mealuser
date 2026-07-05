@@ -26,7 +26,6 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
     cart,
     addToCart,
     addItemsToCart,
-    updateCartItemSpoons,
     clearCart,
     navigateTo,
     favoriteItemIds,
@@ -106,7 +105,6 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
 
   // Item detail modal state
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
-  const [spoonCountTemp, setSpoonCountTemp] = useState<number>(1);
   const [showReplaceCartModal, setShowReplaceCartModal] = useState(false);
   const [pendingCartItem, setPendingCartItem] = useState<{ vId: string; item: CartItem } | null>(null);
   // Set when a multi-select batch is pending a cart-replace confirmation.
@@ -194,7 +192,6 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
       return {
         menuItemId,
         quantity,
-        spoonsCount: cartItemsMap[menuItemId]?.spoonsCount ?? 1,
         name: mi?.name,
         priceKobo: mi?.priceKobo,
         imageUrl: mi?.imageUrl
@@ -234,18 +231,20 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
   };
 
   const handleOpenItemDetail = (item: MenuItem) => {
-    const existing = cartItemsMap[item.id];
-    setSpoonCountTemp(existing ? existing.spoonsCount : 1);
     setSelectedItem(item);
   };
 
   const handleSaveItemDetails = () => {
     if (!selectedItem) return;
     const existing = cartItemsMap[selectedItem.id];
+    // Already in cart — nothing to change here now (quantity is managed on the row/cart).
+    if (existing) {
+      setSelectedItem(null);
+      return;
+    }
     const payload: CartItem = {
       menuItemId: selectedItem.id,
-      quantity: existing ? existing.quantity : 1,
-      spoonsCount: spoonCountTemp,
+      quantity: 1,
       name: selectedItem.name,
       priceKobo: selectedItem.priceKobo,
       imageUrl: selectedItem.imageUrl
@@ -258,8 +257,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
       return;
     }
 
-    if (existing) updateCartItemSpoons(selectedItem.id, spoonCountTemp);
-    else addToCart(vendorId, payload);
+    addToCart(vendorId, payload);
     setSelectedItem(null);
   };
 
@@ -417,7 +415,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
                                       type="button"
                                       onClick={(e) => { e.stopPropagation(); handleOpenItemDetail(item); }}
                                       className="text-muted-grey hover:text-emerald-deep p-1 rounded-md transition cursor-pointer"
-                                      title="More details, nutrition & spoons"
+                                      title="More details, nutrition & reviews"
                                     >
                                       <Info className="w-3.5 h-3.5" />
                                     </button>
@@ -507,7 +505,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
         </div>
       )}
 
-      {/* Item detail modal: nutrition + spoons + reviews */}
+      {/* Item detail modal: nutrition + reviews */}
       {selectedItem && (
         <dialog open className="fixed inset-0 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in" id="item_detail_dialog">
           <div className="bg-white rounded-3xl p-6 max-w-md w-full max-h-[88vh] overflow-y-auto border border-emerald-deep/12 shadow-2xl flex flex-col gap-5">
@@ -586,22 +584,6 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
               )}
             </div>
 
-            {/* Spoons */}
-            <div className="bg-neutral-50 p-4 rounded-2xl border border-emerald-deep/8">
-              <div className="flex items-center gap-1.5 mb-2 text-xs font-bold text-emerald-strong justify-center">
-                <Info className="w-4 h-4 text-emerald-deep" />
-                <span>Plastic Spoons (Max 3)</span>
-              </div>
-              <p className="text-[9px] text-muted-grey text-center mb-3">Request only what you need to reduce plastic waste.</p>
-              <div className="flex items-center justify-center gap-3">
-                <button type="button" onClick={() => setSpoonCountTemp(prev => Math.max(0, prev - 1))} className="w-8 h-8 rounded-full bg-emerald-deep/5 hover:bg-emerald-deep/10 text-emerald-strong flex items-center justify-center font-bold cursor-pointer transition text-xs">-</button>
-                <div className="text-center min-w-16">
-                  <span className="text-sm font-black font-mono text-emerald-strong">{spoonCountTemp}</span>
-                  <span className="text-[9px] text-muted-grey block mt-0.5">{spoonCountTemp === 1 ? 'Plastic Spoon' : 'Plastic Spoons'}</span>
-                </div>
-                <button type="button" onClick={() => setSpoonCountTemp(prev => Math.min(3, prev + 1))} className="w-8 h-8 rounded-full bg-emerald-deep/5 hover:bg-emerald-deep/10 text-emerald-strong flex items-center justify-center font-bold cursor-pointer transition text-xs">+</button>
-              </div>
-            </div>
 
             {/* Reviews */}
             <div className="border-t border-neutral-100 pt-4 mt-2 space-y-3.5">

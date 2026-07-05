@@ -63,10 +63,19 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
     fetchPaymentStatus,
     refreshOrder,
     payOrder,
+    restoreCheckoutCart,
+    clearCheckoutCartBackup,
     vendors: VENDORS,
     locations: PRESET_LOCATIONS,
     deliverySlots: DELIVERY_SLOTS
   } = useMealDirect();
+
+  // Cancelled/failed payment: put the user's items back so "Return to cart" lands on a
+  // populated cart, not an empty one (payOrder cleared the live cart before redirect).
+  const returnToCart = () => {
+    restoreCheckoutCart();
+    navigateTo('/cart');
+  };
 
   // Paystack may append ?status=cancelled (or reference=...) on return. We only trust
   // an explicit cancel signal to skip polling; confirmation always comes from backend.
@@ -159,6 +168,13 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
     return () => { cancelledRef.current = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId, explicitCancel, orderAlreadySettled]);
+
+  // Once payment is confirmed the stashed cart snapshot is no longer needed — drop it
+  // so a later visit doesn't offer to restore an already-paid order's items.
+  useEffect(() => {
+    if (screen === 'success' || screen === 'already_paid') clearCheckoutCartBackup();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen]);
 
   // Manual "Verify payment again" — a single authoritative re-check on demand.
   const handleVerifyAgain = async () => {
@@ -370,7 +386,7 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
                 {verifyAgainBtn}
                 {supportBtn}
                 <button
-                  onClick={() => navigateTo('/cart')}
+                  onClick={returnToCart}
                   className="w-full py-3 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-muted-grey font-bold text-xs rounded-xl transition cursor-pointer"
                 >
                   Return to cart
@@ -397,7 +413,7 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
                 {retryPaymentBtn}
                 {supportBtn}
                 <button
-                  onClick={() => navigateTo('/cart')}
+                  onClick={returnToCart}
                   className="w-full py-3 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-muted-grey font-bold text-xs rounded-xl transition cursor-pointer"
                 >
                   Return to cart

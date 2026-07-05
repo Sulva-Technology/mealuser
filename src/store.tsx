@@ -322,13 +322,16 @@ interface MealDirectContextType {
   addToCart: (vendorId: string, item: CartItem) => void;
   addItemsToCart: (vendorId: string, items: CartItem[]) => void;
   updateCartItemQuantity: (menuItemId: string, quantity: number) => void;
-  updateCartItemSpoons: (menuItemId: string, spoonsCount: number, quantity?: number) => void;
   removeFromCart: (menuItemId: string) => void;
   clearCart: () => void;
   setCartDateTimeLocation: (date: string, slotId: string, locationId: string) => void;
   getCartQuote: () => OrderQuote;
   fetchOrderQuote: (promotionCode?: string) => Promise<ServerQuote | null>;
   validatePromo: (code: string) => Promise<{ valid: boolean; discountKobo: number; message?: string }>;
+  // Restore the cart snapshot stashed at checkout, so a cancelled/failed payment
+  // doesn't drop the user on an empty cart. True if a snapshot was restored.
+  restoreCheckoutCart: () => boolean;
+  clearCheckoutCartBackup: () => void;
 
   // Orders
   orders: Order[];
@@ -357,6 +360,8 @@ interface MealDirectContextType {
   notifications: AppNotification[];
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
+  // Pull fresh orders + notifications from the backend on demand (real pull-to-refresh).
+  refreshUserData: () => Promise<void>;
 
   // Connection & Offline simulated states
   isOnline: boolean;
@@ -609,8 +614,7 @@ function mapOrderItem(raw: any, existing?: any) {
     menuItemId: raw.menuItemId,
     name: raw.itemName || raw.name || existing?.name || 'Item',
     priceKobo: raw.unitPriceKobo ?? raw.priceKobo ?? existing?.priceKobo ?? 0,
-    quantity: raw.quantity ?? existing?.quantity ?? 1,
-    spoonsCount: raw.spoonsCount ?? existing?.spoonsCount ?? 0
+    quantity: raw.quantity ?? existing?.quantity ?? 1
   };
 }
 
@@ -659,6 +663,7 @@ export function normalizeOrder(s: any, existing?: Order): Order {
     totalKobo: s.totalKobo ?? existing?.totalKobo ?? 0,
     status,
     statusHistory: buildStatusHistory(status, s, existing),
+    deliveryCode: s.deliveryCode ?? existing?.deliveryCode ?? null,
     paymentReference: s.latestPayment?.providerReference || existing?.paymentReference,
     requestId: existing?.requestId || s.id,
     createdAt: s.createdAt || existing?.createdAt || new Date().toISOString(),
@@ -895,6 +900,19 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     localStorage.setItem('md_saved_location_ids', JSON.stringify(savedLocationIds));
     localStorage.setItem('md_favorite_item_ids', JSON.stringify(favoriteItemIds));
   }, [user, cart, orders, notifications, escalations, reviews, menuItemReviews, savedLocationIds, favoriteItemIds]);
+
+  // A cart persisted in localStorage keeps the delivery date from when items were
+  // added. Re-opening the app the next day leaves a past date that silently fails the
+  // server quote and blocks checkout. Bump any stale date up to today on mount.
+  useEffect(() => {
+    if (!cart) return;
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (cart.deliveryDate && cart.deliveryDate < today) {
+      setCart(prev => (prev ? { ...prev, deliveryDate: today } : prev));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Resume a Paystack checkout on return. payOrder() stashes the pending order id
   // before redirecting out to Paystack; when the user comes back to the app we send
@@ -1328,6 +1346,12 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     localStorage.removeItem('md_reviews');
     localStorage.removeItem('md_onboarding_temp');
     localStorage.removeItem('md_user');
+    // Per-account data that must not leak to the next account on a shared device.
+    localStorage.removeItem('md_favorite_item_ids');
+    localStorage.removeItem('md_saved_location_ids');
+    localStorage.removeItem('md_menu_item_reviews');
+    localStorage.removeItem('md_device_token');
+    localStorage.removeItem('md_checkout_cart_backup');
 
     setUser(null);
     setToken(null);
@@ -1335,6 +1359,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setOrders([]);
     setNotifications([]);
     setOnboardingData(null);
+    setFavoriteItemIds([]);
+    setSavedLocationIds([]);
+    setMenuItemReviews([]);
     navigateTo('/');
   };
 
@@ -1345,12 +1372,20 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       // Remember the current page so re-login returns the user here.
       saveReturnPath();
       localStorage.removeItem('md_user');
+      localStorage.removeItem('md_favorite_item_ids');
+      localStorage.removeItem('md_saved_location_ids');
+      localStorage.removeItem('md_menu_item_reviews');
+      localStorage.removeItem('md_device_token');
+      localStorage.removeItem('md_checkout_cart_backup');
       setUser(null);
       setToken(null);
       setCart(null);
       setOrders([]);
       setNotifications([]);
       setOnboardingData(null);
+      setFavoriteItemIds([]);
+      setSavedLocationIds([]);
+      setMenuItemReviews([]);
       navigateTo('/');
     };
     window.addEventListener('md:logout', onForcedLogout);
@@ -1378,14 +1413,12 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const existingIndex = currentItems.findIndex(it => it.menuItemId === newItem.menuItemId);
 
     if (existingIndex >= 0) {
-      currentItems[existingIndex].quantity += newItem.quantity;
-      // Enforce the 3 spoon restriction
-      currentItems[existingIndex].spoonsCount = Math.min(3, newItem.spoonsCount);
+      currentItems[existingIndex] = {
+        ...currentItems[existingIndex],
+        quantity: currentItems[existingIndex].quantity + newItem.quantity
+      };
     } else {
-      currentItems.push({
-        ...newItem,
-        spoonsCount: Math.min(3, newItem.spoonsCount)
-      });
+      currentItems.push({ ...newItem });
     }
 
     setCart({
@@ -1416,11 +1449,10 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (existingIndex >= 0) {
         items[existingIndex] = {
           ...items[existingIndex],
-          quantity: items[existingIndex].quantity + newItem.quantity,
-          spoonsCount: Math.min(3, newItem.spoonsCount)
+          quantity: items[existingIndex].quantity + newItem.quantity
         };
       } else {
-        items.push({ ...newItem, spoonsCount: Math.min(3, newItem.spoonsCount) });
+        items.push({ ...newItem });
       }
     }
 
@@ -1448,25 +1480,13 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     } else {
       const idx = currentItems.findIndex(it => it.menuItemId === menuItemId);
       if (idx >= 0) {
-        currentItems[idx].quantity = quantity;
+        currentItems[idx] = { ...currentItems[idx], quantity: Math.min(99, quantity) };
       }
     }
 
     if (currentItems.length === 0) {
       setCart(null);
     } else {
-      setCart({ ...cart, items: currentItems });
-    }
-  };
-
-  const updateCartItemSpoons = (menuItemId: string, spoonsCount: number, quantity?: number) => {
-    if (!cart) return;
-    triggerVibration(VIBE_PATTERNS.TICK);
-    const currentItems = [...cart.items];
-    const idx = currentItems.findIndex(it => it.menuItemId === menuItemId);
-    if (idx >= 0) {
-      currentItems[idx].spoonsCount = Math.min(3, Math.max(0, spoonsCount)); // business rule cap of 3
-      if (quantity !== undefined) currentItems[idx].quantity = quantity;
       setCart({ ...cart, items: currentItems });
     }
   };
@@ -1487,6 +1507,28 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setCart(null);
   };
 
+  // Restore the cart snapshot stashed by payOrder before the Paystack redirect, so a
+  // cancelled/failed payment lands the user back on their populated cart. One-shot:
+  // clears the backup once consumed.
+  const restoreCheckoutCart = (): boolean => {
+    const raw = localStorage.getItem('md_checkout_cart_backup');
+    if (!raw) return false;
+    try {
+      const restored = JSON.parse(raw) as Cart;
+      if (!restored?.items?.length) return false;
+      setCart(restored);
+      localStorage.removeItem('md_checkout_cart_backup');
+      return true;
+    } catch {
+      localStorage.removeItem('md_checkout_cart_backup');
+      return false;
+    }
+  };
+
+  const clearCheckoutCartBackup = () => {
+    localStorage.removeItem('md_checkout_cart_backup');
+  };
+
   const setCartDateTimeLocation = (date: string, slotId: string, locationId: string) => {
     if (!cart) return;
     setCart({
@@ -1499,11 +1541,10 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const getCartQuote = (): OrderQuote => {
     if (!cart) {
-      return { subtotalKobo: 0, deliveryFeeKobo: 20000, totalKobo: 20000, itemCount: 0, spoonCount: 0, isValid: false, errors: ['Cart is empty'] };
+      return { subtotalKobo: 0, deliveryFeeKobo: 20000, totalKobo: 20000, itemCount: 0, isValid: false, errors: ['Cart is empty'] };
     }
 
     let subtotalKobo = 0;
-    let spoonCount = 0;
     let itemCount = 0;
     const errors: string[] = [];
 
@@ -1513,14 +1554,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       // item (slot/date-scoped menu can return empty). Otherwise the row was silently
       // dropped and the whole cart looked empty with a ₦0 subtotal.
       const priceKobo = dbItem?.priceKobo ?? cItem.priceKobo;
-      const name = dbItem?.name ?? cItem.name;
       if (priceKobo !== undefined) {
         subtotalKobo += priceKobo * cItem.quantity;
-        spoonCount += cItem.spoonsCount;
         itemCount += cItem.quantity;
-        if (cItem.spoonsCount > 3) {
-          errors.push(`Takeaway item '${name || cItem.menuItemId}' exceeds the maximum allowed 3 spoons limit.`);
-        }
       } else {
         errors.push(`Item code '${cItem.menuItemId}' could not be validated.`);
       }
@@ -1533,7 +1569,6 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       subtotalKobo,
       deliveryFeeKobo,
       totalKobo,
-      spoonCount,
       itemCount,
       isValid: errors.length === 0,
       errors
@@ -1694,6 +1729,10 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         authorizationUrl: url,
         createdAt: new Date().toISOString()
       }));
+      // Separate, longer-lived snapshot: the PENDING_CHECKOUT_KEY above is consumed
+      // (and removed) on the return-navigation effect, so keep our own copy to restore
+      // the cart if the user cancels/fails payment instead of dropping them on empty.
+      localStorage.setItem('md_checkout_cart_backup', JSON.stringify(cart));
       setCart(null);
     }
 
@@ -1777,7 +1816,6 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const newItems: CartItem[] = targetOrder.items.map(it => ({
       menuItemId: it.menuItemId,
       quantity: it.quantity,
-      spoonsCount: it.spoonsCount,
       name: it.name,
       priceKobo: it.priceKobo
     }));
@@ -2012,7 +2050,11 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const markNotificationRead = async (id: string) => {
-    await apiRequest(`/notifications/${id}/read`, 'POST');
+    // Client-minted notifications (id 'noti_...') have no backend row — POSTing their
+    // read state 404s and would leave the unread badge stuck. Mark those locally only.
+    if (!id.startsWith('noti_')) {
+      await apiRequest(`/notifications/${id}/read`, 'POST');
+    }
     setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)));
   };
 
@@ -2063,13 +2105,14 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         addToCart,
         addItemsToCart,
         updateCartItemQuantity,
-        updateCartItemSpoons,
         removeFromCart,
         clearCart,
         setCartDateTimeLocation,
         getCartQuote,
         fetchOrderQuote,
         validatePromo,
+        restoreCheckoutCart,
+        clearCheckoutCartBackup,
 
         orders,
         createOrder,
@@ -2094,6 +2137,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         notifications,
         markNotificationRead,
         markAllNotificationsRead,
+        refreshUserData: loadUserResources,
 
         isOnline,
         setOnlineStatus,
