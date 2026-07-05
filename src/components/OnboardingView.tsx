@@ -2,14 +2,16 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useMealDirect, publicCatalogRequest, mapLocation } from '../store';
 import { PresetLocation } from '../types';
 import { AppShell, GlassPanel } from './CommonUI';
-import { MapPin, Phone, Check, ShieldAlert, Library, Home, ChevronRight, Globe, User, Loader2, RefreshCw } from 'lucide-react';
+import { MapPin, Phone, Check, ShieldAlert, Library, Home, ChevronRight, Globe, User, Loader2, RefreshCw, Gift } from 'lucide-react';
 import { COUNTRIES, validateCountryPhone } from '../utils/countries';
 
 export const OnboardingView: React.FC = () => {
-  const { user, completeOnboarding, navigateTo, campuses: CAMPUSES } = useMealDirect();
+  const { user, completeOnboarding, navigateTo, campuses: CAMPUSES, redeemReferral, pendingReferralCode } = useMealDirect();
 
   // States
   const [fullName, setFullName] = useState(user?.fullName || '');
+  // Optional referral code. Prefilled from a `?ref=` invite link when present.
+  const [referralCode, setReferralCode] = useState(pendingReferralCode || '');
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]);
   const [localPhone, setLocalPhone] = useState('');
   const [selectedCampus, setSelectedCampus] = useState('');
@@ -93,6 +95,12 @@ export const OnboardingView: React.FC = () => {
       : `${selectedCountry.dialCode}${localPhone.trim().replace(/^0/, '')}`;
 
     try {
+      // Redeem the referral BEFORE completing onboarding — the backend closes the
+      // redemption window once onboarding is done. Skip when no code was entered.
+      const code = referralCode.trim();
+      if (code) {
+        await redeemReferral(code);
+      }
       await completeOnboarding(fullName.trim(), finalPhoneNumber, selectedCampus, selectedLocation);
     } catch (err: any) {
       setErrorMessage(err?.message || 'Could not complete onboarding. Please try again.');
@@ -195,6 +203,35 @@ export const OnboardingView: React.FC = () => {
             <span className="text-[10px] text-muted-grey mt-2 block font-medium">
               Format: {selectedCountry.example}
             </span>
+          </GlassPanel>
+
+          {/* Section 1b: Optional Referral Code */}
+          <GlassPanel className="p-6">
+            <div className="flex items-center gap-2.5 mb-4">
+              <Gift className="w-5 h-5 text-emerald-deep" />
+              <h3 className="font-display font-bold text-sm text-emerald-strong">Referral code <span className="text-muted-grey font-medium">(optional)</span></h3>
+            </div>
+
+            <p className="text-xs text-muted-grey mb-4 leading-relaxed">
+              Got a code from a friend? Enter it now — it can only be added while you set up your account.
+            </p>
+
+            <input
+              type="text"
+              inputMode="text"
+              autoCapitalize="characters"
+              maxLength={8}
+              placeholder="e.g. K7M2QX9A"
+              value={referralCode}
+              onChange={(e) => setReferralCode(e.target.value.toUpperCase().replace(/[^0-9A-HJ-NP-TV-Z]/g, ''))}
+              className="w-full px-4 py-3 bg-white border border-emerald-deep/15 rounded-xl text-sm focus:ring-2 focus:ring-emerald-deep focus:outline-none font-mono font-bold tracking-[0.3em] uppercase text-ink-deep"
+              id="onboarding_referral_input"
+            />
+            {pendingReferralCode && referralCode === pendingReferralCode && (
+              <span className="text-[10px] text-emerald-deep mt-2 block font-semibold">
+                ✓ Code added from your invite link.
+              </span>
+            )}
           </GlassPanel>
 
           {/* Section 2: Choose Preset Dispatch Terminal */}

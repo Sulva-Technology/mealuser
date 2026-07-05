@@ -18,7 +18,8 @@ import {
   Vendor,
   MenuItem,
   ServerQuote,
-  PaymentStatusResult
+  PaymentStatusResult,
+  MyReferral
 } from './types';
 import { isSlotAvailable } from './utils/helpers';
 import { triggerVibration, VIBE_PATTERNS } from './utils/vibe';
@@ -385,6 +386,41 @@ interface MealDirectContextType {
   // Saved Favorite Dishes
   favoriteItemIds: string[];
   toggleFavoriteItem: (itemId: string) => void;
+
+  // Referrals
+  referral: MyReferral | null;
+  // Pull the user's referral code + referred count (GET /referrals/me).
+  fetchReferral: () => Promise<MyReferral | null>;
+  // Bind the user to a referrer via their code (POST /referrals/redeem). Only valid
+  // before onboarding completes; throws with the backend message on invalid/self/used.
+  redeemReferral: (code: string) => Promise<void>;
+  // Referral code captured from a `?ref=` invite link, to prefill the onboarding field.
+  pendingReferralCode: string | null;
+}
+
+// Referral codes are 8 Crockford base32 chars (no I, L, O, U), case-insensitive.
+const REFERRAL_CODE_PATTERN = /^[0-9A-HJ-NP-TV-Z]{8}$/;
+const PENDING_REFERRAL_KEY = 'md_pending_ref';
+
+export function normalizeReferralCode(raw: string): string {
+  return raw.trim().toUpperCase();
+}
+
+export function isValidReferralCode(raw: string): boolean {
+  return REFERRAL_CODE_PATTERN.test(normalizeReferralCode(raw));
+}
+
+// Read a referral code from the invite link's query string (e.g. https://app/?ref=K7M2QX9A).
+// The app uses hash routing, so the code rides in window.location.search before the hash.
+function readReferralFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = new URLSearchParams(window.location.search).get('ref');
+    if (raw && isValidReferralCode(raw)) return normalizeReferralCode(raw);
+  } catch {
+    /* malformed query — ignore */
+  }
+  return null;
 }
 
 const MealDirectContext = createContext<MealDirectContextType | undefined>(undefined);
@@ -887,6 +923,23 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const [activeInAppAlert, setActiveInAppAlert] = useState<{ id: string; orderId: string; orderNumber: string; title: string; message: string; timestamp: string } | null>(null);
   const dismissInAppAlert = () => setActiveInAppAlert(null);
+
+  // Referral state: the user's own code/referred-count, and any code captured from
+  // the invite link they arrived on (persisted so it survives the signup round-trip).
+  const [referral, setReferral] = useState<MyReferral | null>(null);
+  const [pendingReferralCode, setPendingReferralCode] = useState<string | null>(
+    () => readReferralFromUrl() || localStorage.getItem(PENDING_REFERRAL_KEY)
+  );
+
+  // Persist an invite code from a `?ref=` link on first load so it's still available
+  // after the user signs up / confirms email and lands in onboarding.
+  useEffect(() => {
+    const fromUrl = readReferralFromUrl();
+    if (fromUrl) {
+      localStorage.setItem(PENDING_REFERRAL_KEY, fromUrl);
+      setPendingReferralCode(fromUrl);
+    }
+  }, []);
 
   // Sync state with storage
   useEffect(() => {
@@ -2067,6 +2120,41 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
+  // Referrals ----------------------------------------------------------------
+  const fetchReferral = async (): Promise<MyReferral | null> => {
+    try {
+      const data = await apiRequest('/referrals/me', 'GET');
+      if (!data || typeof data.code !== 'string') return null;
+      const mine: MyReferral = {
+        code: data.code,
+        referredCount: typeof data.referredCount === 'number' ? data.referredCount : 0
+      };
+      setReferral(mine);
+      return mine;
+    } catch (e) {
+      console.warn('Failed to load referral:', e);
+      return null;
+    }
+  };
+
+  // Bind the current account to a referrer via their code. The backend only allows
+  // this before onboarding is complete (409 otherwise); we surface its message verbatim.
+  const redeemReferral = async (code: string): Promise<void> => {
+    const normalized = normalizeReferralCode(code);
+    if (!isValidReferralCode(normalized)) {
+      throw new Error('Enter a valid 8-character referral code.');
+    }
+    await apiRequest('/referrals/redeem', 'POST', { code: normalized });
+    // Consume the pending invite code so it isn't re-applied on a later visit.
+    localStorage.removeItem(PENDING_REFERRAL_KEY);
+    setPendingReferralCode(null);
+    addNotification(
+      'Referral applied 🎁',
+      "You're all linked up with your friend. Enjoy Meal Direct!",
+      'general'
+    );
+  };
+
   // Toggle offline connection simulation
   const setOnlineStatus = (status: boolean) => {
     setIsOnline(status);
@@ -2159,7 +2247,12 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         toggleSaveLocation,
 
         favoriteItemIds,
-        toggleFavoriteItem
+        toggleFavoriteItem,
+
+        referral,
+        fetchReferral,
+        redeemReferral,
+        pendingReferralCode
       }}
     >
       {children}

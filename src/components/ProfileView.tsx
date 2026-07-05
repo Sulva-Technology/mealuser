@@ -5,6 +5,7 @@ import {
 	Bookmark,
 	Camera,
 	Check,
+	Copy,
 	CreditCard,
 	FileText,
 	Gift,
@@ -19,6 +20,7 @@ import {
 	MessageCircle,
 	Phone,
 	RotateCcw,
+	Share2,
 	Shield,
 	ShieldAlert,
 	ShieldCheck,
@@ -75,8 +77,49 @@ export const ProfileView: React.FC = () => {
 		campuses: CAMPUSES,
 		locations: PRESET_LOCATIONS,
 		vendors: VENDORS,
-		menuItems: MENU_ITEMS
+		menuItems: MENU_ITEMS,
+		referral,
+		fetchReferral
 	} = useMealDirect();
+
+	// Referral / invite state. Loaded once on mount; `copied` drives the button feedback.
+	const [copied, setCopied] = useState<null | 'code' | 'link'>(null);
+	useEffect(() => {
+		fetchReferral();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	const referralLink = referral
+		? `${window.location.origin}/?ref=${referral.code}`
+		: '';
+
+	const handleCopy = async (value: string, which: 'code' | 'link') => {
+		try {
+			await navigator.clipboard.writeText(value);
+			setCopied(which);
+			setTimeout(() => setCopied(null), 1800);
+		} catch {
+			setMsg({ type: 'error', txt: 'Could not copy. Please copy it manually.' });
+		}
+	};
+
+	const handleShare = async () => {
+		if (!referral) return;
+		const shareData = {
+			title: 'Meal Direct',
+			text: `Join me on Meal Direct and order hot campus meals! Use my referral code ${referral.code}.`,
+			url: referralLink
+		};
+		try {
+			if (navigator.share) {
+				await navigator.share(shareData);
+			} else {
+				await handleCopy(referralLink, 'link');
+			}
+		} catch {
+			/* user dismissed the share sheet — no-op */
+		}
+	};
 
 	// Real spending/nutrition tracker, derived from the customer's own orders.
 	const spendHistory = useMemo(
@@ -626,6 +669,82 @@ export const ProfileView: React.FC = () => {
 									</div>
 								);
 							})}
+					</div>
+				)}
+			</GlassPanel>
+
+			{/* Invite Friends & Referrals */}
+			<GlassPanel className="p-6 mb-6" id="profile_referral_block">
+				<div className="flex items-center justify-between mb-4 pb-2 border-b border-[#10231C]/6">
+					<div className="flex items-center gap-2">
+						<Gift className="w-5 h-5 text-emerald-deep" />
+						<h3 className="font-display font-bold text-sm text-emerald-strong">
+							Invite Friends
+						</h3>
+					</div>
+					<span className="text-[10px] font-bold text-emerald-deep bg-emerald-deep/5 px-2 py-0.5 rounded uppercase">
+						{referral ? `${referral.referredCount} joined` : 'Referrals'}
+					</span>
+				</div>
+
+				<p className="text-xs text-muted-grey mb-4 leading-relaxed">
+					Share your code with friends. They add it while setting up their account, and you get credited when they join Meal Direct.
+				</p>
+
+				{referral ? (
+					<>
+						{/* Referral code + copy */}
+						<div className="flex items-center justify-between gap-3 p-4 rounded-2xl border border-emerald-deep/12 bg-emerald-deep/[0.04] mb-3">
+							<div className="min-w-0">
+								<span className="text-[9px] font-mono font-black text-muted-grey uppercase block mb-1">
+									Your referral code
+								</span>
+								<span className="font-mono font-black text-lg text-emerald-strong tracking-[0.25em] uppercase truncate block">
+									{referral.code}
+								</span>
+							</div>
+							<button
+								type="button"
+								onClick={() => handleCopy(referral.code, 'code')}
+								className="shrink-0 flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-deep hover:bg-emerald-strong text-white text-[10px] font-bold transition cursor-pointer active:scale-95"
+								id="profile_referral_copy_code"
+							>
+								{copied === 'code' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+								<span>{copied === 'code' ? 'Copied' : 'Copy'}</span>
+							</button>
+						</div>
+
+						{/* Share link + actions */}
+						<div className="flex items-center gap-2">
+							<div className="flex-1 min-w-0 px-3.5 py-2.5 rounded-xl border border-neutral-100 bg-neutral-50/60">
+								<span className="text-[11px] text-muted-grey font-mono truncate block">
+									{referralLink}
+								</span>
+							</div>
+							<button
+								type="button"
+								onClick={() => handleCopy(referralLink, 'link')}
+								className="shrink-0 p-2.5 rounded-xl border border-emerald-deep/12 bg-white hover:bg-emerald-deep/5 text-emerald-strong transition cursor-pointer active:scale-95"
+								title="Copy invite link"
+								id="profile_referral_copy_link"
+							>
+								{copied === 'link' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+							</button>
+							<button
+								type="button"
+								onClick={handleShare}
+								className="shrink-0 flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-mango-warm/15 hover:bg-mango-warm/25 text-emerald-strong text-[10px] font-bold transition cursor-pointer active:scale-95"
+								id="profile_referral_share"
+							>
+								<Share2 className="w-3.5 h-3.5" />
+								<span>Share</span>
+							</button>
+						</div>
+					</>
+				) : (
+					<div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-grey">
+						<Gift className="w-4 h-4 text-neutral-300" />
+						<span>Loading your referral code…</span>
 					</div>
 				)}
 			</GlassPanel>

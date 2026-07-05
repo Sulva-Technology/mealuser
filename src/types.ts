@@ -190,6 +190,13 @@ export interface Review {
   createdAt: string;
 }
 
+// GET /v1/referrals/me — the user's own referral code plus how many people they
+// have referred. `code` is 8 Crockford base32 chars (pattern ^[0-9A-HJ-NP-TV-Z]{8}$).
+export interface MyReferral {
+  code: string;
+  referredCount: number;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
