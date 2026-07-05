@@ -171,6 +171,10 @@ export const CartView: React.FC = () => {
       setQuoteError('We could not confirm live pricing and availability. Check your connection and try again.');
       return;
     }
+    if (!cart.deliveryLocationId) {
+      setQuoteError('Please select a delivery location before proceeding.');
+      return;
+    }
     if (!quote.isValid) {
       setQuoteError(quote.errors[0] || 'Takeaway validation checks failed.');
       return;
@@ -405,6 +409,9 @@ export const CartView: React.FC = () => {
                   className="w-full text-[11px] font-bold text-ink-deep bg-white border border-neutral-200 rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-emerald-deep cursor-pointer mt-1"
                   id="cart_location_picker"
                 >
+                  <option value="" disabled>
+                    Select delivery location…
+                  </option>
                   {PRESET_LOCATIONS.map(loc => (
                     <option key={loc.id} value={loc.id}>
                       {loc.name} ({loc.zone})

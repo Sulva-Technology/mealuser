@@ -1404,7 +1404,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         items: [newItem],
         deliverySlotId: currentSlotId,
         deliveryDate: currentDate,
-        deliveryLocationId: currentLocationId || user?.defaultLocationId || ''
+        // No location pre-selected: the user picks their drop-off explicitly at the cart.
+      deliveryLocationId: ''
       });
       return;
     }
@@ -1426,7 +1427,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       items: currentItems,
       deliverySlotId: currentSlotId,
       deliveryDate: currentDate,
-      deliveryLocationId: currentLocationId || user?.defaultLocationId || ''
+      // No location pre-selected: the user picks their drop-off explicitly at the cart.
+      deliveryLocationId: ''
     });
 
     addNotification(
@@ -1461,7 +1463,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       items,
       deliverySlotId: currentSlotId,
       deliveryDate: currentDate,
-      deliveryLocationId: currentLocationId || user?.defaultLocationId || ''
+      // No location pre-selected: the user picks their drop-off explicitly at the cart.
+      deliveryLocationId: ''
     });
 
     addNotification(
@@ -1592,7 +1595,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       vendorId: cart.vendorId,
       serviceDate: cart.deliveryDate || currentDate,
       deliverySlotId: slotId,
-      locationId: cart.deliveryLocationId || user.defaultLocationId || '',
+      locationId: cart.deliveryLocationId || '',
       items: cart.items.map(it => ({
         menuItemId: it.menuItemId,
         quantity: it.quantity
@@ -1657,7 +1660,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       orderStatus: 'pending_payment',
       vendorId: cart.vendorId,
       campusId: user.campusId || campuses[0]?.id || '',
-      locationId: cart.deliveryLocationId || user.defaultLocationId || '',
+      locationId: cart.deliveryLocationId || '',
       deliverySlotId: cart.deliverySlotId || currentSlotId,
       serviceDate: cart.deliveryDate || currentDate,
       foodSubtotalKobo: quote.subtotalKobo,
@@ -1825,7 +1828,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       items: newItems,
       deliverySlotId: currentSlotId,
       deliveryDate: currentDate,
-      deliveryLocationId: currentLocationId || user?.defaultLocationId || ''
+      // No location pre-selected: the user picks their drop-off explicitly at the cart.
+      deliveryLocationId: ''
     });
 
     addNotification(

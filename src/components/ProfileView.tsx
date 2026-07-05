@@ -35,6 +35,7 @@ import {
 	validateCountryPhone,
 } from "../utils/countries";
 import { computeSpendHistory } from "../utils/helpers";
+import { buildSupportMailto } from "../utils/support";
 import { AppShell, Currency, GlassPanel } from "./CommonUI";
 
 // In-app legal & security copy. Shown in a modal instead of linking off to a
@@ -1146,7 +1147,7 @@ export const ProfileView: React.FC = () => {
 				<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 					<button
 						type="button"
-						onClick={() => window.open("https://mealdirect.com/support", "_blank", "noopener,noreferrer")}
+						onClick={() => { window.location.href = buildSupportMailto({ category: "General help" }); }}
 						className="flex items-center gap-3 p-3 bg-white border border-emerald-deep/10 rounded-xl hover:bg-emerald-deep/5 transition cursor-pointer text-left active:scale-95"
 					>
 						<div className="p-2 bg-emerald-deep/10 text-emerald-deep rounded-lg">
@@ -1163,7 +1164,7 @@ export const ProfileView: React.FC = () => {
 					</button>
 					<button
 						type="button"
-						onClick={() => window.open("https://mealdirect.com/support", "_blank", "noopener,noreferrer")}
+						onClick={() => { window.location.href = buildSupportMailto({ category: "Live support" }); }}
 						className="flex items-center gap-3 p-3 bg-white border border-emerald-deep/10 rounded-xl hover:bg-emerald-deep/5 transition cursor-pointer text-left active:scale-95"
 					>
 						<div className="p-2 bg-emerald-deep/10 text-emerald-deep rounded-lg">

@@ -484,7 +484,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
 
       {/* Sticky cart summation panel */}
       {cart && cart.vendorId === vendorId && (
-        <div className="fixed bottom-14 md:bottom-5 left-4 right-4 md:left-auto md:right-5 md:w-80 bg-emerald-strong text-white rounded-2xl p-4 shadow-xl border border-white/5 animate-slide-up z-30">
+        <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:bottom-5 left-4 right-4 md:left-auto md:right-5 md:w-80 bg-emerald-strong text-white rounded-2xl p-4 shadow-xl border border-white/5 animate-slide-up z-30">
           <div className="flex items-center justify-between mb-3 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
               <ShoppingCart className="w-4 h-4 text-mango-warm" />
