@@ -115,7 +115,7 @@ export const Receipt: React.FC<ReceiptProps> = ({ orderId }) => {
   // itemised lines always reconcile to the real total.
   const derivedServiceFee = Math.max(
     0,
-    order.totalKobo - order.subtotalKobo - order.deliveryFeeKobo
+    order.totalKobo - order.subtotalKobo - order.deliveryFeeKobo - (order.largeOrderSurchargeKobo || 0)
   );
 
   const supportHref = buildSupportMailto({
@@ -234,6 +234,12 @@ export const Receipt: React.FC<ReceiptProps> = ({ orderId }) => {
               <div className="flex justify-between">
                 <span className="text-muted-grey">Takeaway fee</span>
                 <Currency kobo={derivedServiceFee} className="font-semibold text-ink-deep" />
+              </div>
+            )}
+            {order.largeOrderSurchargeKobo > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-grey">Large order surcharge</span>
+                <Currency kobo={order.largeOrderSurchargeKobo} className="font-semibold text-ink-deep" />
               </div>
             )}
             <div className="flex justify-between items-baseline pt-2.5 mt-1 border-t border-emerald-deep/15">

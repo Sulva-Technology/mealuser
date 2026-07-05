@@ -87,6 +87,10 @@ export interface ServerQuote {
   deliveryFeeKobo: number;
   serviceFeeKobo: number;
   discountKobo: number;
+  // Large-order surcharge (1.5% + ₦100) applied when the total exceeds the ₦2,490
+  // standard cap. ALREADY included in totalKobo — never recompute client-side.
+  largeOrderSurchargeKobo: number;
+  exceedsStandardCap: boolean;
   totalKobo: number;
   items: ServerQuoteItem[];
 }
@@ -146,6 +150,8 @@ export interface Order {
   }[];
   subtotalKobo: number;
   deliveryFeeKobo: number;
+  // Surcharge paid on large orders, in kobo. 0 for normal orders. Included in totalKobo.
+  largeOrderSurchargeKobo: number;
   totalKobo: number;
   status: OrderStatus;
   statusHistory: OrderStatusHistory[];

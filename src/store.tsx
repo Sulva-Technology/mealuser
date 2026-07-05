@@ -202,7 +202,12 @@ export async function apiRequest(path: string, method = 'GET', body: any = null,
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.error?.message || errorData?.message || `HTTP ${response.status}`);
+    const err = new Error(errorData?.error?.message || errorData?.message || `HTTP ${response.status}`);
+    // Preserve status + backend error code so callers can branch on specific
+    // validation failures (e.g. VALIDATION_FAILED for the large-order surcharge).
+    (err as any).status = response.status;
+    (err as any).code = errorData?.error?.code || errorData?.code;
+    throw err;
   }
 
   if (response.status === 204) return null;
@@ -327,8 +332,8 @@ interface MealDirectContextType {
 
   // Orders
   orders: Order[];
-  createOrder: (specialInstructions?: string, promotionCode?: string) => Promise<Order>;
-  checkoutAndPay: (specialInstructions?: string, promotionCode?: string) => Promise<{ order: Order; authorizationUrl: string }>;
+  createOrder: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean) => Promise<Order>;
+  checkoutAndPay: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean) => Promise<{ order: Order; authorizationUrl: string }>;
   registerDeviceToken: (options?: { silent?: boolean }) => Promise<boolean>;
   unregisterDeviceToken: () => Promise<boolean>;
   payOrder: (orderId: string) => Promise<string>;
@@ -650,6 +655,7 @@ export function normalizeOrder(s: any, existing?: Order): Order {
     items,
     subtotalKobo: s.foodSubtotalKobo ?? existing?.subtotalKobo ?? 0,
     deliveryFeeKobo: s.deliveryFeeKobo ?? existing?.deliveryFeeKobo ?? 0,
+    largeOrderSurchargeKobo: s.largeOrderSurchargeKobo ?? existing?.largeOrderSurchargeKobo ?? 0,
     totalKobo: s.totalKobo ?? existing?.totalKobo ?? 0,
     status,
     statusHistory: buildStatusHistory(status, s, existing),
@@ -1537,7 +1543,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Shared payload builder for quote + order create (single source of truth).
   // Backend uses strict whitelist validation: only menuItemId/quantity per item,
   // a real slot UUID, and no specialInstructions/spoonsCount. Keep this minimal.
-  const buildOrderPayload = (_specialInstructions?: string, promotionCode?: string) => {
+  const buildOrderPayload = (_specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean) => {
     if (!cart || !user) throw new Error('Cannot build order: cart or user missing.');
 
     // Resolve a valid delivery-slot UUID (the legacy default "slot_12" is not a UUID)
@@ -1558,6 +1564,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }))
     };
     if (promotionCode) payload.promotionCode = promotionCode.trim();
+    // Only sent on order create (not quote). Signals the user accepted the
+    // large-order surcharge when the total exceeds the ₦2,490 standard cap.
+    if (acceptLargeOrderSurcharge) payload.acceptLargeOrderSurcharge = true;
     return payload;
   };
 
@@ -1596,10 +1605,10 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Orders Actions
-  const createOrder = async (specialInstructions?: string, promotionCode?: string): Promise<Order> => {
+  const createOrder = async (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean): Promise<Order> => {
     if (!cart || !user) throw new Error('Cannot create order: Pre-requisites not met.');
 
-    const newOrder = await apiRequest('/orders', 'POST', buildOrderPayload(specialInstructions, promotionCode), null, {
+    const newOrder = await apiRequest('/orders', 'POST', buildOrderPayload(specialInstructions, promotionCode, acceptLargeOrderSurcharge), null, {
       'Idempotency-Key': newIdempotencyKey()
     });
 
@@ -1621,6 +1630,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       totalKobo: quote.totalKobo,
       specialInstructions
     });
+    // Backend refresh (refreshOrder) supplies the authoritative surcharge; local
+    // estimate has none, so this stays 0 until the order re-syncs.
     setOrders(prev => [normalized, ...prev]);
     triggerVibration(VIBE_PATTERNS.MEDIUM);
     return normalized;
@@ -1632,7 +1643,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Guarded against concurrent invocation so a double-click can't create two orders.
   const checkoutAndPay = async (
     specialInstructions?: string,
-    promotionCode?: string
+    promotionCode?: string,
+    acceptLargeOrderSurcharge?: boolean
   ): Promise<{ order: Order; authorizationUrl: string }> => {
     if (checkoutInFlight) {
       throw new Error('A checkout is already in progress. Please wait a moment.');
@@ -1648,7 +1660,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
     checkoutInFlight = true;
     try {
-      const order = await createOrder(specialInstructions, promotionCode);
+      const order = await createOrder(specialInstructions, promotionCode, acceptLargeOrderSurcharge);
       const authorizationUrl = await payOrder(order.id);
       return { order, authorizationUrl };
     } finally {

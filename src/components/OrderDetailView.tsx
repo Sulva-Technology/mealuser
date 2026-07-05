@@ -654,6 +654,13 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
                   </span>
                 </div>
 
+                {order.largeOrderSurchargeKobo > 0 && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-grey shrink-0">Large order surcharge</span>
+                    <Currency kobo={order.largeOrderSurchargeKobo} className="font-semibold text-ink-deep" />
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-muted-grey shrink-0">{paid ? 'Amount paid' : 'Amount due'}</span>
                   <Currency kobo={order.totalKobo} className="font-bold text-ink-deep" />

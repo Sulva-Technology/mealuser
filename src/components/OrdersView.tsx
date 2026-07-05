@@ -206,6 +206,11 @@ export const OrdersView: React.FC = () => {
                   <div className="sm:text-right shrink-0">
                     <span className="text-[9px] text-muted-grey block uppercase font-bold">TOTAL</span>
                     <Currency kobo={order.totalKobo} className="text-sm font-black text-emerald-strong select-all" />
+                    {order.largeOrderSurchargeKobo > 0 && (
+                      <span className="block text-[10px] text-muted-grey font-semibold mt-0.5">
+                        Incl. large order surcharge <Currency kobo={order.largeOrderSurchargeKobo} className="font-bold" />
+                      </span>
+                    )}
                   </div>
                 </div>
 

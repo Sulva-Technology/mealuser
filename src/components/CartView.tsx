@@ -52,6 +52,9 @@ export const CartView: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState('');
+  // Large-order surcharge acceptance. Required before checkout when the server
+  // quote reports the total exceeds the ₦2,490 standard cap.
+  const [acceptLargeOrderSurcharge, setAcceptLargeOrderSurcharge] = useState(false);
 
   // Authoritative server quote (availability + real total). Loaded async; the
   // instant local estimate covers the gap until it arrives.
@@ -118,13 +121,20 @@ export const CartView: React.FC = () => {
   const displayDeliveryKobo = serverQuote ? serverQuote.deliveryFeeKobo : quote.deliveryFeeKobo;
   const displayTotalKobo = serverQuote ? serverQuote.totalKobo : quote.totalKobo;
 
+  // Large-order surcharge — authoritative, from the server quote only. Never computed
+  // client-side. The surcharge is already included in totalKobo.
+  const exceedsStandardCap = serverQuote?.exceedsStandardCap ?? false;
+  const largeOrderSurchargeKobo = serverQuote?.largeOrderSurchargeKobo ?? 0;
+  // Must accept the surcharge before checkout when the cap is exceeded.
+  const surchargeBlocksProceed = exceedsStandardCap && !acceptLargeOrderSurcharge;
+
   // Per-slot inventory: the quote reports remainingQuantity for the chosen date + slot.
   const unavailableItems = serverQuote
     ? serverQuote.items.filter(it => (it.remainingQuantity ?? Infinity) < it.quantity)
     : [];
   const hasUnavailable = unavailableItems.length > 0;
 
-  const blockProceed = quote.spoonCount > 3 || hasUnavailable || isQuoteLoading || !isOnline;
+  const blockProceed = quote.spoonCount > 3 || hasUnavailable || isQuoteLoading || !isOnline || surchargeBlocksProceed;
 
   const handleApplyPromo = async () => {
     const code = promoInput.trim();
@@ -163,6 +173,10 @@ export const CartView: React.FC = () => {
       setQuoteError('Some items are sold out for this time slot. Change the delivery slot or date.');
       return;
     }
+    if (exceedsStandardCap && !acceptLargeOrderSurcharge) {
+      setQuoteError('Please accept the large-order surcharge to continue.');
+      return;
+    }
 
     if (localStorage.getItem(SKIP_CONFIRM_KEY) === '1') {
       handleConfirmAndPay();
@@ -180,12 +194,19 @@ export const CartView: React.FC = () => {
 
     // Single consolidated create-order → initialize-payment path (guarded against
     // double submission in the store), so one tap can never make two orders.
-    checkoutAndPay(specialInstructions, appliedPromo || undefined)
+    checkoutAndPay(specialInstructions, appliedPromo || undefined, exceedsStandardCap && acceptLargeOrderSurcharge)
       .then(({ authorizationUrl }) => {
         window.location.href = authorizationUrl; // redirect out to Paystack
       })
       .catch(err => {
         setIsCreatingOrder(false);
+        // Backend rejects a large order when the surcharge wasn't accepted. Surface
+        // it inline near the toggle and force re-acceptance rather than a modal.
+        if (err?.code === 'VALIDATION_FAILED' || err?.status === 400) {
+          setAcceptLargeOrderSurcharge(false);
+          setQuoteError(err.message || 'Order total exceeds the standard ₦2,490 cap. Please accept the large-order surcharge to continue.');
+          return;
+        }
         setErrorMessage(err.message || 'We could not start checkout. Please try again.');
       });
   };
@@ -543,6 +564,13 @@ export const CartView: React.FC = () => {
                   <span className="text-mango-warm font-bold">- <Currency kobo={serverQuote.discountKobo} /></span>
                 </div>
               )}
+
+              {largeOrderSurchargeKobo > 0 && (
+                <div className="flex justify-between">
+                  <span>Large order surcharge:</span>
+                  <Currency kobo={largeOrderSurchargeKobo} className="text-white font-bold" />
+                </div>
+              )}
             </div>
 
             {/* Promo code (moved from the old checkout page) */}
@@ -591,6 +619,25 @@ export const CartView: React.FC = () => {
             {hasUnavailable && (
               <div className="mb-3 p-3 bg-red-500/15 border border-red-300/30 rounded-xl text-[10px] text-red-100 font-semibold">
                 Out of stock for this date/slot: {unavailableItems.map(it => it.name).join(', ')}. Change the delivery slot or date above.
+              </div>
+            )}
+
+            {exceedsStandardCap && (
+              <div className="mb-3 p-3 bg-mango-warm/15 border border-mango-warm/40 rounded-xl space-y-2.5" id="large_order_surcharge_notice">
+                <p className="text-[11px] text-white font-semibold leading-relaxed flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-mango-warm shrink-0 mt-0.5" />
+                  <span>Orders above ₦2,490 are charged an extra 1.5% + ₦100.</span>
+                </p>
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={acceptLargeOrderSurcharge}
+                    onChange={(e) => setAcceptLargeOrderSurcharge(e.target.checked)}
+                    className="w-4 h-4 rounded accent-mango-warm cursor-pointer shrink-0"
+                    id="accept_large_order_surcharge"
+                  />
+                  <span className="text-[11px] font-bold text-white">I accept the large-order surcharge</span>
+                </label>
               </div>
             )}
 
