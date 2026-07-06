@@ -2045,11 +2045,12 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         onMessage(messaging, (payload) => {
           const d = payload.data || {};
           const n = payload.notification || {};
-          addNotification(
-            n.title || d.title || 'Meal Direct',
-            n.body || d.body || d.message || '',
-            'general'
-          );
+          const title = n.title || d.title || 'Meal Direct';
+          const body = n.body || d.body || d.message || '';
+          // Persist to the in-app inbox…
+          addNotification(title, body, 'general');
+          // …and pop a transient toast so a focused user sees it immediately.
+          window.dispatchEvent(new CustomEvent('md:toast', { detail: { title, body } }));
         });
       }
 

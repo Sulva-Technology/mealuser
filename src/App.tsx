@@ -11,6 +11,7 @@ import { HomeView } from "./components/HomeView";
 import { OrderDetailView } from "./components/OrderDetailView";
 import { OrdersView } from "./components/OrdersView";
 import { PaymentStatusView } from "./components/PaymentStatusView";
+import { PushToaster } from "./components/PushToaster";
 import { Receipt } from "./components/Receipt";
 import { ResetPasswordView } from "./components/ResetPasswordView";
 import { MealDirectProvider, useMealDirect } from "./store";
@@ -138,6 +139,7 @@ export default function App() {
 	return (
 		<MealDirectProvider>
 			<RouteDispatcher />
+			<PushToaster />
 		</MealDirectProvider>
 	);
 }
