@@ -10,14 +10,11 @@ import {
 	FileText,
 	Gift,
 	Heart,
-	HelpCircle,
 	History,
 	Home,
 	Library,
-	LifeBuoy,
 	Lock,
 	MapPin,
-	MessageCircle,
 	Phone,
 	RotateCcw,
 	Share2,
@@ -37,7 +34,6 @@ import {
 	validateCountryPhone,
 } from "../utils/countries";
 import { computeSpendHistory } from "../utils/helpers";
-import { buildSupportMailto } from "../utils/support";
 import { AppShell, Currency, GlassPanel } from "./CommonUI";
 
 // In-app legal & security copy. Shown in a modal instead of linking off to a
@@ -84,8 +80,21 @@ export const ProfileView: React.FC = () => {
 
 	// Referral / invite state. Loaded once on mount; `copied` drives the button feedback.
 	const [copied, setCopied] = useState<null | 'code' | 'link'>(null);
+	// Track the fetch itself so a failed load doesn't sit on "Loading…" forever —
+	// distinguish in-flight (loading) from a genuine failure (error + retry).
+	const [referralStatus, setReferralStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+	const loadReferral = async () => {
+		setReferralStatus('loading');
+		const r = await fetchReferral();
+		setReferralStatus(r ? 'ready' : 'error');
+	};
 	useEffect(() => {
-		fetchReferral();
+		let cancelled = false;
+		(async () => {
+			const r = await fetchReferral();
+			if (!cancelled) setReferralStatus(r ? 'ready' : 'error');
+		})();
+		return () => { cancelled = true; };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
@@ -207,18 +216,20 @@ export const ProfileView: React.FC = () => {
 	const filteredLocs = PRESET_LOCATIONS.filter(
 		(loc) => loc.campusId === selectedCampus,
 	);
-	const zoneAHostels = filteredLocs.filter(
-		(loc) => loc.zone === "Zone A" && loc.type === "Hostel",
-	);
-	const zoneADepts = filteredLocs.filter(
-		(loc) => loc.zone === "Zone A" && loc.type === "Department",
-	);
-	const zoneBHostels = filteredLocs.filter(
-		(loc) => loc.zone === "Zone B" && loc.type === "Hostel",
-	);
-	const zoneBDepts = filteredLocs.filter(
-		(loc) => loc.zone === "Zone B" && loc.type === "Department",
-	);
+	// Zones are backend-defined (loc.zone) and vary per campus, so derive the
+	// groups from the data instead of hardcoding "Zone A"/"Zone B" — hardcoded
+	// literals never match a campus whose zones are named differently, which left
+	// the zone headers rendering with no location cards under them.
+	const zoneNames = Array.from(new Set(filteredLocs.map((loc) => loc.zone)));
+	const zoneGroups = zoneNames.map((zoneName) => ({
+		zoneName,
+		hostels: filteredLocs.filter(
+			(loc) => loc.zone === zoneName && loc.type === "Hostel",
+		),
+		depts: filteredLocs.filter(
+			(loc) => loc.zone === zoneName && loc.type === "Department",
+		),
+	}));
 
 	const handleSaveProfile = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -741,10 +752,26 @@ export const ProfileView: React.FC = () => {
 							</button>
 						</div>
 					</>
-				) : (
+				) : referralStatus === 'loading' ? (
 					<div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-grey">
 						<Gift className="w-4 h-4 text-neutral-300" />
 						<span>Loading your referral code…</span>
+					</div>
+				) : (
+					<div className="flex flex-col items-center justify-center gap-3 py-6 text-xs text-muted-grey">
+						<div className="flex items-center gap-2">
+							<Gift className="w-4 h-4 text-neutral-300" />
+							<span>Couldn't load your referral code.</span>
+						</div>
+						<button
+							type="button"
+							onClick={loadReferral}
+							className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-deep hover:bg-emerald-strong text-white text-[10px] font-bold transition cursor-pointer active:scale-95"
+							id="profile_referral_retry"
+						>
+							<RotateCcw className="w-3.5 h-3.5" />
+							<span>Retry</span>
+						</button>
 					</div>
 				)}
 			</GlassPanel>
@@ -888,63 +915,6 @@ export const ProfileView: React.FC = () => {
 					</div>
 				</GlassPanel>
 
-				{/* Dietary Preferences & Allergies */}
-				<GlassPanel className="p-6">
-					<h3 className="font-display font-bold text-sm text-emerald-strong mb-4 flex items-center gap-1.5">
-						<Heart className="w-4.5 h-4.5 text-emerald-deep" />
-						Dietary Preferences & Allergies
-					</h3>
-
-					<div className="space-y-4">
-						<div>
-							<div
-								id="dietary_preferences_label"
-								className="text-[9px] font-bold text-muted-grey block mb-2 uppercase"
-							>
-								Dietary Preferences
-							</div>
-							<fieldset
-								className="flex flex-wrap gap-2"
-								aria-labelledby="dietary_preferences_label"
-							>
-								{["Vegan", "Vegetarian", "Halal", "Keto", "Gluten-Free"].map(
-									(diet) => (
-										<label
-											key={diet}
-											className="flex items-center gap-2 px-3 py-1.5 border border-emerald-deep/15 rounded-lg cursor-pointer hover:bg-emerald-deep/5 transition"
-										>
-											<input
-												type="checkbox"
-												className="w-3.5 h-3.5 text-emerald-deep focus:ring-emerald-deep accent-emerald-deep"
-											/>
-											<span className="text-[10px] font-bold text-ink-deep">
-												{diet}
-											</span>
-										</label>
-									),
-								)}
-							</fieldset>
-						</div>
-
-						<div>
-							<label
-								htmlFor="profile_allergies_input"
-								className="text-[9px] font-bold text-muted-grey block mb-2 uppercase"
-							>
-								Allergies
-							</label>
-							<div className="relative">
-								<input
-									id="profile_allergies_input"
-									type="text"
-									placeholder="e.g. Peanuts, Shellfish, Dairy"
-									className="w-full px-4 py-3 bg-white border border-emerald-deep/15 rounded-xl text-xs focus:ring-2 focus:ring-emerald-deep focus:outline-none"
-								/>
-							</div>
-						</div>
-					</div>
-				</GlassPanel>
-
 				{/* Pinned shortcuts overview panel */}
 				{savedLocationIds.length > 0 && (
 					<GlassPanel className="p-6">
@@ -1036,211 +1006,79 @@ export const ProfileView: React.FC = () => {
 					</div>
 
 					<div className="space-y-6">
-						{/* ZONE A */}
-						<div>
-							<span className="text-[9px] font-black tracking-wider text-emerald-strong bg-emerald-deep/5 px-2 py-0.5 rounded uppercase">
-								Zone A
-							</span>
+						{filteredLocs.length === 0 ? (
+							<p className="text-xs text-muted-grey italic py-4 text-center">
+								No delivery locations available for this campus yet. Please check
+								back shortly.
+							</p>
+						) : (
+							zoneGroups.map((group, zi) => (
+								<div key={group.zoneName}>
+									<span
+										className={`text-[9px] font-black tracking-wider px-2 py-0.5 rounded uppercase ${
+											zi % 2 === 0
+												? "text-emerald-strong bg-emerald-deep/5"
+												: "text-mango-warm bg-mango-warm/5"
+										}`}
+									>
+										{group.zoneName}
+									</span>
 
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-3">
-								{zoneAHostels.map((loc) => {
-									const isPinned = savedLocationIds.includes(loc.id);
-									return (
-										<div
-											key={loc.id}
-											className={`flex items-center justify-between p-2.5 rounded-xl border transition text-xs ${
-												selectedLocation === loc.id
-													? "border-emerald-deep bg-emerald-deep/6"
-													: "border-neutral-100 hover:border-emerald-deep/20 hover:bg-neutral-50/50"
-											}`}
-										>
-											<button
-												type="button"
-												onClick={() => setSelectedLocation(loc.id)}
-												className="flex-1 flex items-center gap-2 truncate text-left cursor-pointer font-bold text-emerald-strong"
-											>
-												<Home className="w-4 h-4 text-emerald-deep/80 shrink-0" />
-												<span className="truncate">{loc.name}</span>
-											</button>
-
-											<div className="flex items-center gap-1 px-1 shrink-0">
-												{selectedLocation === loc.id && (
-													<Check className="w-3.5 h-3.5 text-emerald-deep" />
-												)}
-												<button
-													type="button"
-													onClick={() => toggleSaveLocation(loc.id)}
-													className={`p-1.5 rounded-lg transition active:scale-90 cursor-pointer ${
-														isPinned
-															? "text-amber-500"
-															: "text-neutral-300 hover:text-neutral-500"
+									<div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-3">
+										{[...group.hostels, ...group.depts].map((loc) => {
+											const isPinned = savedLocationIds.includes(loc.id);
+											return (
+												<div
+													key={loc.id}
+													className={`flex items-center justify-between p-2.5 rounded-xl border transition text-xs ${
+														selectedLocation === loc.id
+															? "border-emerald-deep bg-emerald-deep/6"
+															: "border-neutral-100 hover:border-emerald-deep/20 hover:bg-neutral-50/50"
 													}`}
-													title={
-														isPinned
-															? "Unpin building"
-															: "Pin building for quick shortcuts"
-													}
 												>
-													<Bookmark
-														className={`w-3.5 h-3.5 ${isPinned ? "fill-current" : ""}`}
-													/>
-												</button>
-											</div>
-										</div>
-									);
-								})}
+													<button
+														type="button"
+														onClick={() => setSelectedLocation(loc.id)}
+														className="flex-1 flex items-center gap-2 truncate text-left cursor-pointer font-bold text-emerald-strong"
+													>
+														{loc.type === "Hostel" ? (
+															<Home className="w-4 h-4 text-emerald-deep/80 shrink-0" />
+														) : (
+															<Library className="w-4 h-4 text-emerald-deep/80 shrink-0" />
+														)}
+														<span className="truncate">{loc.name}</span>
+													</button>
 
-								{zoneADepts.map((loc) => {
-									const isPinned = savedLocationIds.includes(loc.id);
-									return (
-										<div
-											key={loc.id}
-											className={`flex items-center justify-between p-2.5 rounded-xl border transition text-xs ${
-												selectedLocation === loc.id
-													? "border-emerald-deep bg-emerald-deep/6"
-													: "border-neutral-100 hover:border-emerald-deep/20 hover:bg-neutral-50/50"
-											}`}
-										>
-											<button
-												type="button"
-												onClick={() => setSelectedLocation(loc.id)}
-												className="flex-1 flex items-center gap-2 truncate text-left cursor-pointer font-bold text-emerald-strong"
-											>
-												<Library className="w-4 h-4 text-emerald-deep/80 shrink-0" />
-												<span className="truncate">{loc.name}</span>
-											</button>
-
-											<div className="flex items-center gap-1 px-1 shrink-0">
-												{selectedLocation === loc.id && (
-													<Check className="w-3.5 h-3.5 text-emerald-deep" />
-												)}
-												<button
-													type="button"
-													onClick={() => toggleSaveLocation(loc.id)}
-													className={`p-1.5 rounded-lg transition active:scale-90 cursor-pointer ${
-														isPinned
-															? "text-amber-500"
-															: "text-neutral-300 hover:text-neutral-500"
-													}`}
-													title={
-														isPinned
-															? "Unpin building"
-															: "Pin building for quick shortcuts"
-													}
-												>
-													<Bookmark
-														className={`w-3.5 h-3.5 ${isPinned ? "fill-current" : ""}`}
-													/>
-												</button>
-											</div>
-										</div>
-									);
-								})}
-							</div>
-						</div>
-
-						{/* ZONE B */}
-						<div>
-							<span className="text-[9px] font-black tracking-wider text-mango-warm bg-mango-warm/5 px-2 py-0.5 rounded uppercase">
-								Zone B
-							</span>
-
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-3">
-								{zoneBHostels.map((loc) => {
-									const isPinned = savedLocationIds.includes(loc.id);
-									return (
-										<div
-											key={loc.id}
-											className={`flex items-center justify-between p-2.5 rounded-xl border transition text-xs ${
-												selectedLocation === loc.id
-													? "border-emerald-deep bg-emerald-deep/6"
-													: "border-neutral-100 hover:border-emerald-deep/20 hover:bg-neutral-50/50"
-											}`}
-										>
-											<button
-												type="button"
-												onClick={() => setSelectedLocation(loc.id)}
-												className="flex-1 flex items-center gap-2 truncate text-left cursor-pointer font-bold text-emerald-strong"
-											>
-												<Home className="w-4 h-4 text-emerald-deep/80 shrink-0" />
-												<span className="truncate">{loc.name}</span>
-											</button>
-
-											<div className="flex items-center gap-1 px-1 shrink-0">
-												{selectedLocation === loc.id && (
-													<Check className="w-3.5 h-3.5 text-emerald-deep" />
-												)}
-												<button
-													type="button"
-													onClick={() => toggleSaveLocation(loc.id)}
-													className={`p-1.5 rounded-lg transition active:scale-90 cursor-pointer ${
-														isPinned
-															? "text-amber-500"
-															: "text-neutral-300 hover:text-neutral-500"
-													}`}
-													title={
-														isPinned
-															? "Unpin building"
-															: "Pin building for quick shortcuts"
-													}
-												>
-													<Bookmark
-														className={`w-3.5 h-3.5 ${isPinned ? "fill-current" : ""}`}
-													/>
-												</button>
-											</div>
-										</div>
-									);
-								})}
-
-								{zoneBDepts.map((loc) => {
-									const isPinned = savedLocationIds.includes(loc.id);
-									return (
-										<div
-											key={loc.id}
-											className={`flex items-center justify-between p-2.5 rounded-xl border transition text-xs ${
-												selectedLocation === loc.id
-													? "border-emerald-deep bg-emerald-deep/6"
-													: "border-neutral-100 hover:border-emerald-deep/20 hover:bg-neutral-50/50"
-											}`}
-										>
-											<button
-												type="button"
-												onClick={() => setSelectedLocation(loc.id)}
-												className="flex-1 flex items-center gap-2 truncate text-left cursor-pointer font-bold text-emerald-strong"
-											>
-												<Library className="w-4 h-4 text-emerald-deep/80 shrink-0" />
-												<span className="truncate">{loc.name}</span>
-											</button>
-
-											<div className="flex items-center gap-1 px-1 shrink-0">
-												{selectedLocation === loc.id && (
-													<Check className="w-3.5 h-3.5 text-emerald-deep" />
-												)}
-												<button
-													type="button"
-													onClick={() => toggleSaveLocation(loc.id)}
-													className={`p-1.5 rounded-lg transition active:scale-90 cursor-pointer ${
-														isPinned
-															? "text-amber-500"
-															: "text-neutral-300 hover:text-neutral-500"
-													}`}
-													title={
-														isPinned
-															? "Unpin building"
-															: "Pin building for quick shortcuts"
-													}
-												>
-													<Bookmark
-														className={`w-3.5 h-3.5 ${isPinned ? "fill-current" : ""}`}
-													/>
-												</button>
-											</div>
-										</div>
-									);
-								})}
-							</div>
-						</div>
+													<div className="flex items-center gap-1 px-1 shrink-0">
+														{selectedLocation === loc.id && (
+															<Check className="w-3.5 h-3.5 text-emerald-deep" />
+														)}
+														<button
+															type="button"
+															onClick={() => toggleSaveLocation(loc.id)}
+															className={`p-1.5 rounded-lg transition active:scale-90 cursor-pointer ${
+																isPinned
+																	? "text-amber-500"
+																	: "text-neutral-300 hover:text-neutral-500"
+															}`}
+															title={
+																isPinned
+																	? "Unpin building"
+																	: "Pin building for quick shortcuts"
+															}
+														>
+															<Bookmark
+																className={`w-3.5 h-3.5 ${isPinned ? "fill-current" : ""}`}
+															/>
+														</button>
+													</div>
+												</div>
+											);
+										})}
+									</div>
+								</div>
+							))
+						)}
 					</div>
 				</GlassPanel>
 
@@ -1255,51 +1093,6 @@ export const ProfileView: React.FC = () => {
 					</span>
 				</button>
 			</form>
-
-			{/* Customer Support */}
-			<GlassPanel className="p-6 mt-6">
-				<h3 className="font-display font-bold text-sm text-emerald-strong mb-4 flex items-center gap-1.5">
-					<LifeBuoy className="w-4.5 h-4.5 text-emerald-deep" />
-					Customer Support
-				</h3>
-
-				<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-					<button
-						type="button"
-						onClick={() => { window.location.href = buildSupportMailto({ category: "General help" }); }}
-						className="flex items-center gap-3 p-3 bg-white border border-emerald-deep/10 rounded-xl hover:bg-emerald-deep/5 transition cursor-pointer text-left active:scale-95"
-					>
-						<div className="p-2 bg-emerald-deep/10 text-emerald-deep rounded-lg">
-							<HelpCircle className="w-4 h-4" />
-						</div>
-						<div>
-							<div className="text-xs font-bold text-emerald-strong">
-								Help Center & FAQ
-							</div>
-							<div className="text-[9px] text-muted-grey mt-0.5">
-								Find answers automatically
-							</div>
-						</div>
-					</button>
-					<button
-						type="button"
-						onClick={() => { window.location.href = buildSupportMailto({ category: "Live support" }); }}
-						className="flex items-center gap-3 p-3 bg-white border border-emerald-deep/10 rounded-xl hover:bg-emerald-deep/5 transition cursor-pointer text-left active:scale-95"
-					>
-						<div className="p-2 bg-emerald-deep/10 text-emerald-deep rounded-lg">
-							<MessageCircle className="w-4 h-4" />
-						</div>
-						<div>
-							<div className="text-xs font-bold text-emerald-strong">
-								Live Support Chat
-							</div>
-							<div className="text-[9px] text-muted-grey mt-0.5">
-								Talk to our campus experts
-							</div>
-						</div>
-					</button>
-				</div>
-			</GlassPanel>
 
 			{/* Legal & Security */}
 			<GlassPanel className="p-6 mt-6">
