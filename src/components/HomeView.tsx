@@ -80,7 +80,14 @@ export const HomeView: React.FC = () => {
       else dishTally.set(it.menuItemId, { menuItemId: it.menuItemId, name: it.name, priceKobo: it.priceKobo, vendorId: o.vendorId, qty: it.quantity });
     })
   );
-  const topDishes = Array.from(dishTally.values()).sort((a, b) => b.qty - a.qty).slice(0, 4);
+  // Drop dishes whose vendor is no longer in the live catalog (e.g. suspended) —
+  // the catalog/vendor list is already status-filtered server-side, so absence
+  // there means the kitchen is hidden and its meals must not resurface here.
+  // While VENDORS is still loading (empty) keep them to avoid a flash-then-hide.
+  const topDishes = Array.from(dishTally.values())
+    .filter(d => VENDORS.length === 0 || VENDORS.some(v => v.id === d.vendorId))
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, 4);
 
   // Favorited dishes that actually resolve in the loaded catalog. Driving the tab
   // count off this list keeps the badge and the rendered cards in agreement.
