@@ -319,6 +319,12 @@ export const CartView: React.FC = () => {
                         <Currency kobo={itemTotalKobo} className="text-xs text-ink-deep font-bold" />
                       </div>
 
+                      {cartItem.soupName && (
+                        <span className="inline-flex items-center gap-1 mt-1 text-[9.5px] font-bold text-emerald-strong bg-emerald-deep/10 px-1.5 py-0.5 rounded">
+                          🍲 {cartItem.soupName}
+                        </span>
+                      )}
+
                       {soldOut && (
                         <span className="inline-flex items-center gap-1 mt-1 text-[9px] font-bold text-danger bg-red-50 border border-red-200 px-1.5 py-0.5 rounded">
                           <AlertTriangle className="w-2.5 h-2.5" /> Sold out for selected slot

@@ -650,7 +650,8 @@ function mapOrderItem(raw: any, existing?: any) {
     menuItemId: raw.menuItemId,
     name: raw.itemName || raw.name || existing?.name || 'Item',
     priceKobo: raw.unitPriceKobo ?? raw.priceKobo ?? existing?.priceKobo ?? 0,
-    quantity: raw.quantity ?? existing?.quantity ?? 1
+    quantity: raw.quantity ?? existing?.quantity ?? 1,
+    soupName: raw.soupName ?? existing?.soupName ?? null
   };
 }
 
@@ -761,7 +762,10 @@ export function mapVendor(raw: any): Vendor {
     rating: typeof raw.rating === 'number' ? raw.rating : (raw.ratingAverage ?? 0),
     reviewCount: typeof raw.reviewCount === 'number' ? raw.reviewCount : (raw.ratingCount ?? 0),
     featuredTags: raw.featuredTags || (raw.kitchenLocation ? [raw.kitchenLocation] : []),
-    preparationTimeMins: raw.preparationTimeMins ?? 0
+    preparationTimeMins: raw.preparationTimeMins ?? 0,
+    soupOptions: Array.isArray(raw.soupOptions)
+      ? raw.soupOptions.map((s: any) => ({ id: s.id, name: s.name }))
+      : []
   };
 }
 
@@ -784,7 +788,8 @@ export function mapMenuItem(raw: any, vendorId?: string): MenuItem {
     ),
     category: raw.categoryName || raw.category || 'General',
     availableQuantity: raw.remainingQuantity ?? raw.availableQuantity ?? 0,
-    vendorId: raw.vendorId ?? vendorId ?? ''
+    vendorId: raw.vendorId ?? vendorId ?? '',
+    requiresSoup: raw.requiresSoup === true
   };
 }
 
@@ -1632,8 +1637,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Shared payload builder for quote + order create (single source of truth).
-  // Backend uses strict whitelist validation: only menuItemId/quantity per item,
-  // a real slot UUID, and no specialInstructions/spoonsCount. Keep this minimal.
+  // Backend uses strict whitelist validation: menuItemId/quantity per item plus an
+  // optional soupOptionId (required for wraps/soup items), a real slot UUID, and no
+  // specialInstructions/spoonsCount. Keep this minimal.
   const buildOrderPayload = (_specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean) => {
     if (!cart || !user) throw new Error('Cannot build order: cart or user missing.');
 
@@ -1651,7 +1657,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       locationId: cart.deliveryLocationId || '',
       items: cart.items.map(it => ({
         menuItemId: it.menuItemId,
-        quantity: it.quantity
+        quantity: it.quantity,
+        ...(it.soupOptionId ? { soupOptionId: it.soupOptionId } : {})
       }))
     };
     if (promotionCode) payload.promotionCode = promotionCode.trim();

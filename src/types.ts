@@ -27,6 +27,14 @@ export interface MenuItem {
   category: string;
   availableQuantity: number;
   vendorId: string;
+  // When true (e.g. a "wraps" swallow like eba/semo), the customer must pick exactly one
+  // of the vendor's soups before this item can be added to the cart / ordered.
+  requiresSoup?: boolean;
+}
+
+export interface SoupOption {
+  id: string;
+  name: string;
 }
 
 export interface Vendor {
@@ -38,6 +46,8 @@ export interface Vendor {
   reviewCount: number;
   featuredTags: string[];
   preparationTimeMins: number;
+  // The vendor's active soups; rendered as the picker for any item with requiresSoup.
+  soupOptions?: SoupOption[];
 }
 
 export interface CartItem {
@@ -50,6 +60,10 @@ export interface CartItem {
   name?: string;
   priceKobo?: number;
   imageUrl?: string;
+  // Chosen soup for a requiresSoup item. soupOptionId is sent to the backend per line;
+  // soupName is the display snapshot for cart/receipt rows.
+  soupOptionId?: string;
+  soupName?: string;
 }
 
 export interface Cart {
@@ -144,6 +158,7 @@ export interface Order {
     name: string;
     priceKobo: number;
     quantity: number;
+    soupName?: string | null;
   }[];
   subtotalKobo: number;
   deliveryFeeKobo: number;

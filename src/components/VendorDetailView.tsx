@@ -3,7 +3,7 @@ import { useMealDirect, apiRequest, mapMenuItem, publicCatalogRequest } from '..
 import { isSlotAvailable } from '../utils/helpers';
 import { AppShell, GlassPanel, Currency, PortionsBadge } from './CommonUI';
 import { LoadingSkeleton } from './LoadingSkeleton';
-import { ArrowLeft, Clock, Star, Plus, Minus, ShoppingCart, Info, ShieldAlert, Trash2, Flame, Sparkles, Heart, Check, Calendar } from 'lucide-react';
+import { ArrowLeft, Clock, Star, Plus, Minus, ShoppingCart, Info, ShieldAlert, Trash2, Flame, Sparkles, Heart, Check, Calendar, Soup } from 'lucide-react';
 import { CartItem, MenuItem } from '../types';
 import { resolveImage, handleImageError } from '../utils/images';
 
@@ -50,6 +50,11 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
   // staged and committed to the cart together via the single Add-all button.
   const [selection, setSelection] = useState<Record<string, number>>({});
   const selectedCount = Object.keys(selection).length;
+
+  // Chosen soup per selected item: menuItemId -> soupOptionId. Only meaningful for
+  // items with requiresSoup; enforced before the selection can be added to the cart.
+  const [soupSelection, setSoupSelection] = useState<Record<string, string>>({});
+  const [soupError, setSoupError] = useState<string | null>(null);
 
   const toggleSelect = (id: string) => {
     setSelection(prev => {
@@ -102,6 +107,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
   }, [vendorId, currentDate, currentSlotId]);
 
   const vendor = vendors.find(v => v.id === vendorId);
+  const soupOptions = vendor?.soupOptions ?? [];
 
   // Item detail modal state
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
@@ -187,14 +193,29 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
   // Commit the staged multi-select form to the cart. If a cart from another vendor
   // exists, defer to the replace-cart confirmation first.
   const handleAddSelected = () => {
+    // Every selected wraps/soup item must have a soup chosen first.
+    const missingSoup = Object.keys(selection).find(id => {
+      const mi = menuItems.find(m => m.id === id);
+      return mi?.requiresSoup && !soupSelection[id];
+    });
+    if (missingSoup) {
+      const mi = menuItems.find(m => m.id === missingSoup);
+      setSoupError(`Choose a soup for ${mi?.name ?? 'your dish'} before adding it.`);
+      return;
+    }
+    setSoupError(null);
+
     const items: CartItem[] = Object.entries(selection).map(([menuItemId, quantity]) => {
       const mi = menuItems.find(m => m.id === menuItemId);
+      const soupOptionId = mi?.requiresSoup ? soupSelection[menuItemId] : undefined;
+      const soupName = soupOptionId ? soupOptions.find(s => s.id === soupOptionId)?.name : undefined;
       return {
         menuItemId,
         quantity,
         name: mi?.name,
         priceKobo: mi?.priceKobo,
-        imageUrl: mi?.imageUrl
+        imageUrl: mi?.imageUrl,
+        ...(soupOptionId ? { soupOptionId, soupName } : {})
       };
     });
     if (!items.length) return;
@@ -207,6 +228,7 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
 
     addItemsToCart(vendorId, items);
     setSelection({});
+    setSoupSelection({});
   };
 
   const handleConfirmReplaceCart = () => {
@@ -242,12 +264,19 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
       setSelectedItem(null);
       return;
     }
+    const chosenSoupId = selectedItem.requiresSoup ? soupSelection[selectedItem.id] : undefined;
+    if (selectedItem.requiresSoup && !chosenSoupId) {
+      setSoupError(`Choose a soup for ${selectedItem.name} first.`);
+      return;
+    }
+    const chosenSoupName = chosenSoupId ? soupOptions.find(s => s.id === chosenSoupId)?.name : undefined;
     const payload: CartItem = {
       menuItemId: selectedItem.id,
       quantity: 1,
       name: selectedItem.name,
       priceKobo: selectedItem.priceKobo,
-      imageUrl: selectedItem.imageUrl
+      imageUrl: selectedItem.imageUrl,
+      ...(chosenSoupId ? { soupOptionId: chosenSoupId, soupName: chosenSoupName } : {})
     };
 
     if (cart && cart.vendorId !== vendorId) {
@@ -453,6 +482,30 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
                                   </div>
                                 )}
                               </div>
+
+                              {/* Soup picker: shown for wraps/soup items once selected. Required before add. */}
+                              {isSelected && item.requiresSoup && (
+                                <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+                                  <label className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wide text-emerald-strong mb-1">
+                                    <Soup className="w-3 h-3" /> Choose soup
+                                  </label>
+                                  {soupOptions.length === 0 ? (
+                                    <p className="text-[10px] text-danger font-semibold">This vendor has not set up soups yet.</p>
+                                  ) : (
+                                    <select
+                                      value={soupSelection[item.id] ?? ''}
+                                      onChange={(e) => setSoupSelection(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                      className={`w-full text-[11px] font-semibold rounded-lg border px-2 py-1.5 bg-white cursor-pointer ${soupSelection[item.id] ? 'border-emerald-deep/25 text-emerald-strong' : 'border-danger/40 text-muted-grey'}`}
+                                      id={`soup_select_${item.id}`}
+                                    >
+                                      <option value="" disabled>Select a soup…</option>
+                                      {soupOptions.map(s => (
+                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -461,6 +514,12 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
                   </fieldset>
                 );
               })}
+
+              {soupError && (
+                <div className="flex items-center gap-1.5 text-[11px] font-bold text-danger bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5" id="soup_error_banner">
+                  <Soup className="w-4 h-4 shrink-0" /> {soupError}
+                </div>
+              )}
 
               {/* Single add-all submit for the whole selection */}
               <button
@@ -643,6 +702,30 @@ export const VendorDetailView: React.FC<VendorDetailViewProps> = ({ vendorId }) 
                 )}
               </div>
             </div>
+
+            {/* Soup picker for wraps/soup items — required before adding from the detail modal. */}
+            {selectedItem.requiresSoup && !cartItemsMap[selectedItem.id] && (
+              <div className="bg-emerald-deep/5 p-4 rounded-2xl border border-emerald-deep/8">
+                <label className="flex items-center gap-1.5 text-xs font-bold text-emerald-strong mb-2">
+                  <Soup className="w-4 h-4" /> Choose your soup
+                </label>
+                {soupOptions.length === 0 ? (
+                  <p className="text-[10px] text-danger font-semibold">This vendor has not set up soups yet.</p>
+                ) : (
+                  <select
+                    value={soupSelection[selectedItem.id] ?? ''}
+                    onChange={(e) => setSoupSelection(prev => ({ ...prev, [selectedItem.id]: e.target.value }))}
+                    className="w-full text-xs font-semibold rounded-xl border border-emerald-deep/20 px-3 py-2.5 bg-white cursor-pointer text-emerald-strong"
+                    id={`soup_select_modal_${selectedItem.id}`}
+                  >
+                    <option value="" disabled>Select a soup…</option>
+                    {soupOptions.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-2">
               <button type="button" onClick={() => setSelectedItem(null)} className="flex-1 py-3 bg-neutral-50 hover:bg-neutral-100 text-muted-grey font-bold text-xs rounded-xl transition cursor-pointer">Close</button>

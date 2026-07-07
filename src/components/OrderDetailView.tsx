@@ -617,6 +617,9 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
                     <div className="min-w-0 flex-1">
                       <p className="font-bold text-emerald-strong truncate">{it.name}</p>
                       <span className="text-[10px] text-muted-grey block mt-0.5">Qty: {it.quantity}</span>
+                      {it.soupName && (
+                        <span className="text-[10px] font-semibold text-emerald-strong block mt-0.5">🍲 {it.soupName}</span>
+                      )}
                     </div>
                     <Currency kobo={it.priceKobo * it.quantity} className="font-mono text-ink-deep font-bold shrink-0" />
                   </div>

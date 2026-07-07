@@ -213,6 +213,9 @@ export const Receipt: React.FC<ReceiptProps> = ({ orderId }) => {
                     <span className="text-[10px] text-muted-grey">
                       {it.quantity} × <Currency kobo={it.priceKobo} />
                     </span>
+                    {it.soupName && (
+                      <span className="text-[10px] text-emerald-strong font-semibold block">🍲 {it.soupName}</span>
+                    )}
                   </div>
                   <Currency kobo={it.priceKobo * it.quantity} className="font-bold text-ink-deep shrink-0" />
                 </div>
