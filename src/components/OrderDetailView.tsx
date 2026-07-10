@@ -4,6 +4,7 @@ import { AppShell, GlassPanel, Currency, LoadingSkeleton, MessageModal } from '.
 import { DeliveredAnimation } from './DeliveredAnimation';
 import { resolveImage, handleImageError } from '../utils/images';
 import { LiveTrackerPip } from './LiveTrackerPip';
+import { ChatPanel } from './ChatPanel';
 import { buildSupportMailto, copyToClipboard, LEGAL_LINKS } from '../utils/support';
 import {
   ArrowLeft,
@@ -95,6 +96,9 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
   // Copy state
   const [copied, setCopied] = useState(false);
   const [copiedRef, setCopiedRef] = useState(false);
+
+  // Batch chat overlay
+  const [showChat, setShowChat] = useState(false);
 
   // Form states for support escalations
   const [escalateCategory, setEscalateCategory] = useState<Escalation['category']>('NON_DELIVERY');
@@ -471,9 +475,8 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
         <LiveTrackerPip order={order} />
       </section>
 
-      {/* Delivery confirmation code — shown only while out for delivery, when the
-          backend has issued the 4-digit code. Read aloud to the rider; no input needed. */}
-      {order.status === 'OUT_FOR_DELIVERY' && order.deliveryCode && (
+      {/* Delivery confirmation code. Read aloud only when the rider hands over the order. */}
+      {!['PENDING_PAYMENT', 'CANCELLED', 'REFUNDED', 'EXPIRED', 'CONFIRMED'].includes(order.status) && order.deliveryCode && (
         <section className="mb-6 animate-fade-in" id="delivery_code_box">
           <div className="rounded-2xl p-6 bg-emerald-deep text-white shadow-lg shadow-emerald-deep/20 border border-emerald-strong text-center">
             <div className="flex items-center justify-center gap-1.5 mb-2">
@@ -481,7 +484,7 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
               <h4 className="text-[11px] font-bold uppercase tracking-wide text-mango-warm">Delivery confirmation code</h4>
             </div>
             <p className="text-[11px] text-white/80 leading-relaxed max-w-xs mx-auto">
-              Read this code to your rider to confirm delivery:
+              Keep this code. Give it to the rider only after you receive your order:
             </p>
             <div className="mt-3 font-mono font-black text-5xl sm:text-6xl tracking-[0.25em] select-all tabular-nums">
               {order.deliveryCode}
@@ -489,6 +492,30 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
           </div>
         </section>
       )}
+
+      {/* Batch chat entry — available once the order is in a delivery batch. */}
+      {order.batchId && !['PENDING_PAYMENT', 'CANCELLED', 'REFUNDED', 'EXPIRED'].includes(order.status) && (
+        <section className="mb-6" id="batch_chat_box">
+          <button
+            onClick={() => setShowChat(true)}
+            className="w-full flex items-center justify-between gap-3 rounded-2xl p-4 bg-emerald-deep/5 border border-emerald-deep/12 hover:bg-emerald-deep/10 transition text-left cursor-pointer active:scale-[0.99]"
+            id="open_batch_chat_btn"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-deep/10 text-emerald-strong flex items-center justify-center">
+                <MessageSquare className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-emerald-strong">Chat with your rider</h4>
+                <p className="text-[9px] text-muted-grey mt-0.5">Message the rider handling your delivery. Your name stays private.</p>
+              </div>
+            </div>
+            <Send className="w-4 h-4 text-emerald-strong" />
+          </button>
+        </section>
+      )}
+
+      {showChat && order.batchId && <ChatPanel batchId={order.batchId} onClose={() => setShowChat(false)} />}
 
       {/* 2. Live status refresh — pulls the latest authoritative status from the backend */}
       {['CONFIRMED', 'CANCELLED', 'REFUNDED'].indexOf(order.status) === -1 && (
@@ -636,6 +663,18 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
               </h3>
               <p className="text-xs text-[#2A3B34] leading-relaxed font-semibold bg-white/80 p-3.5 rounded-xl border border-emerald-deep/10 shadow-xs whitespace-pre-wrap">
                 {order.specialInstructions}
+              </p>
+            </GlassPanel>
+          )}
+
+          {order.roomNumber && (
+            <GlassPanel className="p-6 border-l-4 border-l-emerald-deep bg-emerald-deep/5 animate-fade-in">
+              <h3 className="font-display font-bold text-sm text-emerald-strong mb-3 flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-emerald-deep shrink-0" />
+                <span>Hostel Room</span>
+              </h3>
+              <p className="text-xs text-[#2A3B34] leading-relaxed font-semibold bg-white/80 p-3.5 rounded-xl border border-emerald-deep/10 shadow-xs">
+                {order.roomNumber}
               </p>
             </GlassPanel>
           )}

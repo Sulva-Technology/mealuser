@@ -167,15 +167,34 @@ export interface Order {
   totalKobo: number;
   status: OrderStatus;
   statusHistory: OrderStatusHistory[];
-  // 4-digit code the customer reads aloud to the rider to confirm delivery.
-  // Backend only populates it once the order is OUT_FOR_DELIVERY; null before that.
+  // 4-digit code the customer reads aloud to the rider after receiving the order.
   deliveryCode?: string | null;
+  deliveryHandoff?: {
+    code: string;
+    instruction: string;
+  } | null;
   paymentReference?: string;
   requestId: string;
   createdAt: string;
   hasEscalation: boolean;
   hasReview: boolean;
   specialInstructions?: string;
+  roomNumber?: string | null;
+  // Delivery batch this order belongs to, when batched. Powers the batch chat.
+  batchId?: string | null;
+}
+
+export type ChatSenderRole = 'rider' | 'customer' | 'vendor';
+
+export interface ChatMessage {
+  id: string;
+  batchId: string;
+  senderUserId: string;
+  senderLabel: string;
+  senderRole: ChatSenderRole;
+  body: string;
+  createdAt: string;
+  mine: boolean;
 }
 
 export interface Notification {

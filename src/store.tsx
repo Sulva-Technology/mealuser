@@ -336,8 +336,8 @@ interface MealDirectContextType {
 
   // Orders
   orders: Order[];
-  createOrder: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean) => Promise<Order>;
-  checkoutAndPay: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean) => Promise<{ order: Order; authorizationUrl: string }>;
+  createOrder: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string) => Promise<Order>;
+  checkoutAndPay: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string) => Promise<{ order: Order; authorizationUrl: string }>;
   registerDeviceToken: (options?: { silent?: boolean }) => Promise<boolean>;
   unregisterDeviceToken: () => Promise<boolean>;
   payOrder: (orderId: string) => Promise<string>;
@@ -700,13 +700,16 @@ export function normalizeOrder(s: any, existing?: Order): Order {
     totalKobo: s.totalKobo ?? existing?.totalKobo ?? 0,
     status,
     statusHistory: buildStatusHistory(status, s, existing),
-    deliveryCode: s.deliveryCode ?? existing?.deliveryCode ?? null,
+    deliveryCode: s.deliveryCode ?? s.deliveryHandoff?.code ?? existing?.deliveryCode ?? null,
+    deliveryHandoff: s.deliveryHandoff ?? existing?.deliveryHandoff ?? null,
     paymentReference: s.latestPayment?.providerReference || existing?.paymentReference,
     requestId: existing?.requestId || s.id,
     createdAt: s.createdAt || existing?.createdAt || new Date().toISOString(),
     hasEscalation: existing?.hasEscalation || false,
     hasReview: existing?.hasReview || false,
-    specialInstructions: s.specialInstructions ?? existing?.specialInstructions
+    specialInstructions: s.specialInstructions ?? existing?.specialInstructions,
+    roomNumber: s.roomNumber ?? existing?.roomNumber ?? null,
+    batchId: s.batchId ?? existing?.batchId ?? null
   };
 }
 
@@ -1640,7 +1643,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Backend uses strict whitelist validation: menuItemId/quantity per item plus an
   // optional soupOptionId (required for wraps/soup items), a real slot UUID, and no
   // specialInstructions/spoonsCount. Keep this minimal.
-  const buildOrderPayload = (_specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean) => {
+  const buildOrderPayload = (_specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string) => {
     if (!cart || !user) throw new Error('Cannot build order: cart or user missing.');
 
     // Resolve a valid delivery-slot UUID (the legacy default "slot_12" is not a UUID)
@@ -1662,6 +1665,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }))
     };
     if (promotionCode) payload.promotionCode = promotionCode.trim();
+    if (roomNumber?.trim()) payload.roomNumber = roomNumber.trim();
     // Only sent on order create (not quote). Signals the user accepted the
     // large-order surcharge when the total exceeds the ₦2,490 standard cap.
     if (acceptLargeOrderSurcharge) payload.acceptLargeOrderSurcharge = true;
@@ -1703,10 +1707,10 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Orders Actions
-  const createOrder = async (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean): Promise<Order> => {
+  const createOrder = async (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string): Promise<Order> => {
     if (!cart || !user) throw new Error('Cannot create order: Pre-requisites not met.');
 
-    const newOrder = await apiRequest('/orders', 'POST', buildOrderPayload(specialInstructions, promotionCode, acceptLargeOrderSurcharge), null, {
+    const newOrder = await apiRequest('/orders', 'POST', buildOrderPayload(specialInstructions, promotionCode, acceptLargeOrderSurcharge, roomNumber), null, {
       'Idempotency-Key': newIdempotencyKey()
     });
 
@@ -1726,7 +1730,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       foodSubtotalKobo: quote.subtotalKobo,
       deliveryFeeKobo: quote.deliveryFeeKobo,
       totalKobo: quote.totalKobo,
-      specialInstructions
+      specialInstructions,
+      roomNumber
     });
     // Backend refresh (refreshOrder) supplies the authoritative surcharge; local
     // estimate has none, so this stays 0 until the order re-syncs.
@@ -1742,7 +1747,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const checkoutAndPay = async (
     specialInstructions?: string,
     promotionCode?: string,
-    acceptLargeOrderSurcharge?: boolean
+    acceptLargeOrderSurcharge?: boolean,
+    roomNumber?: string
   ): Promise<{ order: Order; authorizationUrl: string }> => {
     if (checkoutInFlight) {
       throw new Error('A checkout is already in progress. Please wait a moment.');
@@ -1758,7 +1764,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
     checkoutInFlight = true;
     try {
-      const order = await createOrder(specialInstructions, promotionCode, acceptLargeOrderSurcharge);
+      const order = await createOrder(specialInstructions, promotionCode, acceptLargeOrderSurcharge, roomNumber);
       const authorizationUrl = await payOrder(order.id);
       return { order, authorizationUrl };
     } finally {

@@ -90,6 +90,7 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
   const [isVerifying, setIsVerifying] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showHandoffModal, setShowHandoffModal] = useState(false);
   const cancelledRef = useRef(false);
 
   // If the order is ALREADY settled when the user lands here (e.g. re-opening the
@@ -105,6 +106,7 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
   const reference = payStatus?.reference || order?.paymentReference;
   const amountKobo = payStatus?.paidAmountKobo ?? payStatus?.expectedAmountKobo ?? order?.totalKobo ?? 0;
   const orderNumber = order?.orderNumber;
+  const handoffCode = order?.deliveryCode;
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -175,6 +177,12 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
     if (screen === 'success' || screen === 'already_paid') clearCheckoutCartBackup();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
+
+  useEffect(() => {
+    if ((screen === 'success' || screen === 'already_paid') && handoffCode) {
+      setShowHandoffModal(true);
+    }
+  }, [screen, handoffCode]);
 
   // Manual "Verify payment again" — a single authoritative re-check on demand.
   const handleVerifyAgain = async () => {
@@ -333,6 +341,17 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
                   {slot && <div>Slot: <strong className="text-emerald-strong">{slot.label}</strong></div>}
                 </div>
               )}
+              {handoffCode && (
+                <div className="w-full rounded-2xl border border-emerald-deep/15 bg-emerald-deep/5 p-4 text-left">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-strong">Rider code</p>
+                  <p className="mt-1 text-[11px] text-muted-grey leading-relaxed">
+                    Give this code to the rider only after you receive your order.
+                  </p>
+                  <div className="mt-3 text-center font-mono font-black text-4xl tracking-[0.2em] text-emerald-strong select-all">
+                    {handoffCode}
+                  </div>
+                </div>
+              )}
               <div className="flex flex-col gap-2.5 w-full mt-2">
                 {viewOrderBtn}
                 {viewReceiptBtn}
@@ -472,6 +491,26 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
             <span>Payments are processed securely by Paystack.</span>
           </div>
         </GlassPanel>
+
+        {showHandoffModal && handoffCode && (
+          <dialog open className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl border border-emerald-deep/10">
+              <h3 className="font-display font-black text-lg text-emerald-strong">Save your rider code</h3>
+              <p className="mt-2 text-xs text-muted-grey leading-relaxed">
+                When the rider arrives and asks for the code, give this after you receive your order.
+              </p>
+              <div className="mt-5 rounded-2xl bg-emerald-deep text-white py-5 font-mono font-black text-5xl tracking-[0.22em] select-all">
+                {handoffCode}
+              </div>
+              <button
+                onClick={() => setShowHandoffModal(false)}
+                className="mt-5 w-full rounded-xl bg-mango-warm py-3 text-xs font-black text-emerald-strong"
+              >
+                I understand
+              </button>
+            </div>
+          </dialog>
+        )}
       </div>
     </AppShell>
   );

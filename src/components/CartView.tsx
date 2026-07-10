@@ -50,6 +50,7 @@ export const CartView: React.FC = () => {
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+  const [roomNumber, setRoomNumber] = useState('');
   // Large-order surcharge acceptance. Required before checkout when the server
   // quote reports the total exceeds the ₦2,490 standard cap.
   const [acceptLargeOrderSurcharge, setAcceptLargeOrderSurcharge] = useState(false);
@@ -106,6 +107,8 @@ export const CartView: React.FC = () => {
   const activeLocation = PRESET_LOCATIONS.find(l => l.id === cart.deliveryLocationId);
   const activeSlot = DELIVERY_SLOTS.find(s => s.id === cart.deliverySlotId);
   const activeVendor = VENDORS.find(v => v.id === cart.vendorId);
+  const roomNumberRequired = activeLocation?.type === 'Hostel';
+  const roomNumberMissing = roomNumberRequired && roomNumber.trim().length === 0;
 
   // Same-day ordering: today is selectable (uses the LOCAL calendar date, not the
   // UTC date). Backend remains the final authority on per-slot cutoffs.
@@ -136,7 +139,7 @@ export const CartView: React.FC = () => {
   // only a local estimate (missing service fee/discount/surcharge). Block checkout so
   // the user never pays against a wrong figure or hits a late backend rejection.
   const quoteUnavailable = isOnline && !isQuoteLoading && !serverQuote;
-  const blockProceed = hasUnavailable || isQuoteLoading || !isOnline || surchargeBlocksProceed || quoteUnavailable;
+  const blockProceed = hasUnavailable || isQuoteLoading || !isOnline || surchargeBlocksProceed || quoteUnavailable || roomNumberMissing;
 
   const handleApplyPromo = async () => {
     const code = promoInput.trim();
@@ -187,6 +190,10 @@ export const CartView: React.FC = () => {
       setQuoteError('Please accept the large-order surcharge to continue.');
       return;
     }
+    if (roomNumberMissing) {
+      setQuoteError('Please enter your hostel room number so the rider can find you.');
+      return;
+    }
 
     if (localStorage.getItem(SKIP_CONFIRM_KEY) === '1') {
       handleConfirmAndPay();
@@ -204,7 +211,7 @@ export const CartView: React.FC = () => {
 
     // Single consolidated create-order → initialize-payment path (guarded against
     // double submission in the store), so one tap can never make two orders.
-    checkoutAndPay(undefined, appliedPromo || undefined, exceedsStandardCap && acceptLargeOrderSurcharge)
+    checkoutAndPay(undefined, appliedPromo || undefined, exceedsStandardCap && acceptLargeOrderSurcharge, roomNumberRequired ? roomNumber : undefined)
       .then(({ authorizationUrl }) => {
         window.location.href = authorizationUrl; // redirect out to Paystack
       })
@@ -381,6 +388,7 @@ export const CartView: React.FC = () => {
                         key={locId}
                         onClick={() => {
                           setCurrentDateTimeLocation(cart.deliveryDate, cart.deliverySlotId, locId);
+                          setRoomNumber('');
                         }}
                         className={`px-2.5 py-1.5 rounded-xl border transition text-[10px] font-bold cursor-pointer flex items-center gap-1 ${
                           isSelected
@@ -411,6 +419,7 @@ export const CartView: React.FC = () => {
                   value={cart.deliveryLocationId}
                   onChange={(e) => {
                     setCurrentDateTimeLocation(cart.deliveryDate, cart.deliverySlotId, e.target.value);
+                    setRoomNumber('');
                   }}
                   className="w-full text-[11px] font-bold text-ink-deep bg-white border border-neutral-200 rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-emerald-deep cursor-pointer mt-1"
                   id="cart_location_picker"
@@ -424,6 +433,21 @@ export const CartView: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                {roomNumberRequired && (
+                  <div className="mt-2">
+                    <label className="text-[10px] text-muted-grey uppercase font-bold block mb-1">
+                      Hostel room number
+                    </label>
+                    <input
+                      type="text"
+                      value={roomNumber}
+                      onChange={(e) => setRoomNumber(e.target.value.slice(0, 32))}
+                      placeholder="e.g. B12 or Room 204"
+                      className="w-full text-[11px] font-bold text-ink-deep bg-white border border-neutral-200 rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-emerald-deep"
+                      id="cart_room_number_input"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className={`flex flex-col gap-1.5 p-3 rounded-xl border ${hasUnavailable ? 'bg-red-50/60 border-red-200' : 'bg-neutral-50/50 border-neutral-100'}`}>
@@ -682,6 +706,12 @@ export const CartView: React.FC = () => {
                 <span className="text-muted-grey font-semibold">Location:</span>
                 <span className="font-bold text-emerald-strong text-right max-w-[160px] truncate">{activeLocation ? activeLocation.name : '—'}</span>
               </div>
+              {roomNumberRequired && (
+                <div className="flex justify-between">
+                  <span className="text-muted-grey font-semibold">Room:</span>
+                  <span className="font-bold text-emerald-strong text-right max-w-[160px] truncate">{roomNumber.trim() || 'Required'}</span>
+                </div>
+              )}
               <div className="flex justify-between pt-2 mt-1 border-t border-neutral-200">
                 <span className="text-emerald-strong font-bold">Total to pay:</span>
                 <span className="font-black text-emerald-deep text-sm"><Currency kobo={displayTotalKobo} /></span>
