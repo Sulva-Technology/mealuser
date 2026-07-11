@@ -90,7 +90,6 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
   const [isVerifying, setIsVerifying] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [showHandoffModal, setShowHandoffModal] = useState(false);
   const cancelledRef = useRef(false);
 
   // If the order is ALREADY settled when the user lands here (e.g. re-opening the
@@ -123,7 +122,16 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
     }
 
     let attempts = 0;
-    const MAX_ATTEMPTS = 20; // ~40s at 2s — webhook/active-verify usually lands in seconds
+    // Fast phase: 2s polling for ~40s (webhook/active-verify usually lands here).
+    // Then keep a SLOW background poll alive up to a few minutes, because the
+    // backend reconcile cron can take ~120s+ (Render cold start + Paystack verify)
+    // to flip a payment to paid. Without this the user was stranded on "pending"
+    // while admin already saw it paid, until they hit "Verify payment again".
+    const FAST_ATTEMPTS = 20; // ~40s at 2s
+    const FAST_INTERVAL_MS = 2000;
+    const SLOW_INTERVAL_MS = 8000;
+    const TOTAL_BUDGET_MS = 4 * 60 * 1000; // ~4 min of auto-polling
+    const startedAt = Date.now();
 
     const poll = async () => {
       if (cancelledRef.current) return;
@@ -150,20 +158,22 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
       const nextState = derivePaymentPollingState({
         paymentStatus: status,
         hasKnownOrder: orders.some(o => o.id === orderId),
-        attemptsExhausted: attempts >= MAX_ATTEMPTS,
+        attemptsExhausted: attempts >= FAST_ATTEMPTS,
         explicitCancel: false
       });
 
+      // Terminal states stop the loop; 'not_found' only trusted once past the
+      // fast phase (a freshly-created order may not be locally known yet).
       if (nextState === 'success') { if (!cancelledRef.current) setScreen('success'); return; }
       if (nextState === 'cancelled') { if (!cancelledRef.current) setScreen('cancelled'); return; }
       if (nextState === 'not_found') { if (!cancelledRef.current) setScreen('not_found'); return; }
-      if (nextState === 'pending_verification') { if (!cancelledRef.current) setScreen('pending'); return; }
 
-      if (attempts >= MAX_ATTEMPTS) {
-        if (!cancelledRef.current) setScreen('pending');
-        return;
-      }
-      setTimeout(poll, 2000);
+      // Still unresolved. After the fast phase, surface the "pending" screen but
+      // KEEP polling slowly so the user auto-updates when the backend resolves.
+      if (attempts >= FAST_ATTEMPTS && !cancelledRef.current) setScreen('pending');
+
+      if (Date.now() - startedAt >= TOTAL_BUDGET_MS) return; // give up auto-poll; manual verify remains
+      setTimeout(poll, attempts >= FAST_ATTEMPTS ? SLOW_INTERVAL_MS : FAST_INTERVAL_MS);
     };
 
     poll();
@@ -177,12 +187,6 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
     if (screen === 'success' || screen === 'already_paid') clearCheckoutCartBackup();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
-
-  useEffect(() => {
-    if ((screen === 'success' || screen === 'already_paid') && handoffCode) {
-      setShowHandoffModal(true);
-    }
-  }, [screen, handoffCode]);
 
   // Manual "Verify payment again" — a single authoritative re-check on demand.
   const handleVerifyAgain = async () => {
@@ -343,13 +347,10 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
               )}
               {handoffCode && (
                 <div className="w-full rounded-2xl border border-emerald-deep/15 bg-emerald-deep/5 p-4 text-left">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-strong">Rider code</p>
-                  <p className="mt-1 text-[11px] text-muted-grey leading-relaxed">
-                    Give this code to the rider only after you receive your order.
+                  <p className="text-[11px] text-muted-grey leading-relaxed">
+                    Your <strong className="text-emerald-strong">delivery confirmation code</strong> is saved in
+                    your order details. Give it to the rider only after you receive your order.
                   </p>
-                  <div className="mt-3 text-center font-mono font-black text-4xl tracking-[0.2em] text-emerald-strong select-all">
-                    {handoffCode}
-                  </div>
                 </div>
               )}
               <div className="flex flex-col gap-2.5 w-full mt-2">
@@ -491,26 +492,6 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
             <span>Payments are processed securely by Paystack.</span>
           </div>
         </GlassPanel>
-
-        {showHandoffModal && handoffCode && (
-          <dialog open className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
-            <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl border border-emerald-deep/10">
-              <h3 className="font-display font-black text-lg text-emerald-strong">Save your rider code</h3>
-              <p className="mt-2 text-xs text-muted-grey leading-relaxed">
-                When the rider arrives and asks for the code, give this after you receive your order.
-              </p>
-              <div className="mt-5 rounded-2xl bg-emerald-deep text-white py-5 font-mono font-black text-5xl tracking-[0.22em] select-all">
-                {handoffCode}
-              </div>
-              <button
-                onClick={() => setShowHandoffModal(false)}
-                className="mt-5 w-full rounded-xl bg-mango-warm py-3 text-xs font-black text-emerald-strong"
-              >
-                I understand
-              </button>
-            </div>
-          </dialog>
-        )}
       </div>
     </AppShell>
   );

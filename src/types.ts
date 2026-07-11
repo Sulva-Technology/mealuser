@@ -184,7 +184,7 @@ export interface Order {
   batchId?: string | null;
 }
 
-export type ChatSenderRole = 'rider' | 'customer' | 'vendor';
+export type ChatSenderRole = 'rider' | 'customer' | 'vendor' | 'admin';
 
 export interface ChatMessage {
   id: string;
