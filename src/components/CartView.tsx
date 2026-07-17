@@ -4,6 +4,7 @@ import { AppShell, GlassPanel, Currency, MessageModal } from './CommonUI';
 import { resolveImage, handleImageError } from '../utils/images';
 import { buildSupportMailto, LEGAL_LINKS } from '../utils/support';
 import { isSlotAvailable } from '../utils/helpers';
+import { launchPaystackCheckout } from '../utils/paystackPopup';
 import {
   Trash2,
   Calendar,
@@ -212,8 +213,19 @@ export const CartView: React.FC = () => {
     // Single consolidated create-order → initialize-payment path (guarded against
     // double submission in the store), so one tap can never make two orders.
     checkoutAndPay(undefined, appliedPromo || undefined, exceedsStandardCap && acceptLargeOrderSurcharge, roomNumberRequired ? roomNumber : undefined)
-      .then(({ authorizationUrl }) => {
-        window.location.href = authorizationUrl; // redirect out to Paystack
+      .then(async ({ order, authorizationUrl, accessCode }) => {
+        // Inline popup keeps the user in the app; the payment-status view behind it
+        // polls (first fetch active-verifies), so callbacks only accelerate the
+        // resolution. Hosted redirect remains the fallback inside launchPaystackCheckout.
+        const statusPath = `/payment/status/${order.id}`;
+        const mode = await launchPaystackCheckout(
+          { authorizationUrl, accessCode },
+          {
+            onSuccess: () => navigateTo(statusPath),
+            onCancel: () => navigateTo(`${statusPath}?status=cancelled`)
+          }
+        );
+        if (mode === 'popup') navigateTo(statusPath);
       })
       .catch(err => {
         setIsCreatingOrder(false);

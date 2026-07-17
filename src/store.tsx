@@ -337,10 +337,10 @@ interface MealDirectContextType {
   // Orders
   orders: Order[];
   createOrder: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string) => Promise<Order>;
-  checkoutAndPay: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string) => Promise<{ order: Order; authorizationUrl: string }>;
+  checkoutAndPay: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string) => Promise<{ order: Order; authorizationUrl: string; accessCode?: string }>;
   registerDeviceToken: (options?: { silent?: boolean }) => Promise<boolean>;
   unregisterDeviceToken: () => Promise<boolean>;
-  payOrder: (orderId: string) => Promise<string>;
+  payOrder: (orderId: string) => Promise<{ authorizationUrl: string; accessCode?: string }>;
   refreshOrder: (orderId: string) => Promise<Order | null>;
   fetchPaymentStatus: (orderId: string) => Promise<PaymentStatusResult | null>;
   confirmDelivery: (orderId: string) => Promise<void>;
@@ -1749,7 +1749,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     promotionCode?: string,
     acceptLargeOrderSurcharge?: boolean,
     roomNumber?: string
-  ): Promise<{ order: Order; authorizationUrl: string }> => {
+  ): Promise<{ order: Order; authorizationUrl: string; accessCode?: string }> => {
     if (checkoutInFlight) {
       throw new Error('A checkout is already in progress. Please wait a moment.');
     }
@@ -1765,17 +1765,18 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     checkoutInFlight = true;
     try {
       const order = await createOrder(specialInstructions, promotionCode, acceptLargeOrderSurcharge, roomNumber);
-      const authorizationUrl = await payOrder(order.id);
-      return { order, authorizationUrl };
+      const launch = await payOrder(order.id);
+      return { order, ...launch };
     } finally {
       checkoutInFlight = false;
     }
   };
 
-  // Initialize Paystack. Returns the hosted authorization URL to redirect to.
-  // Does NOT mark the order paid — payment truth comes from the backend webhook,
-  // surfaced via fetchPaymentStatus / refreshOrder after the user returns.
-  const payOrder = async (orderId: string): Promise<string> => {
+  // Initialize Paystack. Returns the inline-popup accessCode plus the hosted
+  // authorization URL (redirect fallback). Does NOT mark the order paid — payment
+  // truth comes from the backend webhook/active verify, surfaced via
+  // fetchPaymentStatus / refreshOrder.
+  const payOrder = async (orderId: string): Promise<{ authorizationUrl: string; accessCode?: string }> => {
     triggerVibration(VIBE_PATTERNS.SUCCESS);
 
     const initRes = await apiRequest(`/orders/${orderId}/payments/paystack/initialize`, 'POST', null, null, {
@@ -1785,6 +1786,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (!url) {
       throw new Error('Payment gateway did not return an authorization URL.');
     }
+    const accessCode = initRes?.accessCode || initRes?.access_code;
 
     // Record the payment reference only (still PENDING_PAYMENT until confirmed)
     setOrders(prev =>
@@ -1805,7 +1807,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setCart(null);
     }
 
-    return url;
+    return { authorizationUrl: url, ...(accessCode ? { accessCode } : {}) };
   };
 
   // Re-fetch a single order from the backend and merge into local state

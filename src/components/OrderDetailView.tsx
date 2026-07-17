@@ -6,6 +6,7 @@ import { resolveImage, handleImageError } from '../utils/images';
 import { LiveTrackerPip } from './LiveTrackerPip';
 import { ChatPanel } from './ChatPanel';
 import { buildSupportMailto, copyToClipboard, LEGAL_LINKS } from '../utils/support';
+import { launchPaystackCheckout } from '../utils/paystackPopup';
 import {
   ArrowLeft,
   Clock,
@@ -182,8 +183,13 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
   const handleResumePayment = async () => {
     setActionError(null);
     try {
-      const authUrl = await payOrder(order.id);
-      window.location.href = authUrl;
+      const launch = await payOrder(order.id);
+      const statusPath = `/payment/status/${order.id}`;
+      const mode = await launchPaystackCheckout(launch, {
+        onSuccess: () => navigateTo(statusPath),
+        onCancel: () => navigateTo(`${statusPath}?status=cancelled`)
+      });
+      if (mode === 'popup') navigateTo(statusPath);
     } catch (err: any) {
       setActionError(err?.message || 'Could not resume payment. Please try again.');
     }

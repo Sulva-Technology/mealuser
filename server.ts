@@ -180,6 +180,9 @@ function applySecurity(app: Express, backendUrl: string, isProd: boolean) {
                 'https://*.supabase.co',
                 'https://*.ingest.sentry.io',
                 'https://sentry.io',
+                // Paystack inline popup: transaction bootstrap + status checks.
+                'https://api.paystack.co',
+                'https://checkout.paystack.com',
                 // FCM getToken(): Installations + registration APIs (page and SW).
                 'https://fcmregistrations.googleapis.com',
                 'https://firebaseinstallations.googleapis.com'
@@ -188,7 +191,8 @@ function applySecurity(app: Express, backendUrl: string, isProd: boolean) {
               'frame-src': ["'self'", 'https://checkout.paystack.com'],
               'img-src': ["'self'", 'data:', 'https:'],
               // gstatic: the FCM background SW importScripts() the compat SDK.
-              'script-src': ["'self'", JSONLD_CSP_HASH, 'https://www.gstatic.com'],
+              // js.paystack.co: the inline (popup) checkout script.
+              'script-src': ["'self'", JSONLD_CSP_HASH, 'https://www.gstatic.com', 'https://js.paystack.co'],
               'style-src': ["'self'", "'unsafe-inline'"]
             }
           }

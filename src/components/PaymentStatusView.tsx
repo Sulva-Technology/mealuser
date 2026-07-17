@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { derivePaymentPollingState, useMealDirect } from '../store';
 import { AppShell, GlassPanel, Currency } from './CommonUI';
 import { buildSupportMailto, copyToClipboard } from '../utils/support';
+import { launchPaystackCheckout } from '../utils/paystackPopup';
 import type { PaymentStatusResult } from '../types';
 import {
   CheckCircle2,
@@ -217,8 +218,17 @@ export const PaymentStatusView: React.FC<PaymentStatusProps> = ({ orderId }) => 
     setActionError(null);
     setIsRetrying(true);
     try {
-      const authUrl = await payOrder(orderId);
-      window.location.href = authUrl;
+      const launch = await payOrder(orderId);
+      // Popup overlays this very screen; on success a single verify resolves it,
+      // on cancel we simply stay here. Redirect fallback navigates away entirely.
+      const mode = await launchPaystackCheckout(launch, {
+        onSuccess: () => { void handleVerifyAgain(); },
+        onCancel: () => setScreen('pending')
+      });
+      if (mode === 'popup') {
+        setIsRetrying(false);
+        setScreen('pending');
+      }
     } catch (e: any) {
       setIsRetrying(false);
       setActionError(e?.message || 'Could not restart payment. Please try again.');
