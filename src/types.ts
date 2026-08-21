@@ -254,6 +254,7 @@ export type RoutePath =
   | '/orders'
   | '/notifications'
   | '/profile'
+  | '/wallet'
   | '/offline'; // We use simple state-routing which handles dynamic IDs easily in active props.
 
 export interface MenuItemReview {
@@ -262,5 +263,37 @@ export interface MenuItemReview {
   rating: number;
   comment: string;
   userName: string;
+  createdAt: string;
+}
+
+// --- v2 wallet ---
+export type PaymentMethod = 'wallet' | 'paystack';
+
+export interface DedicatedAccount {
+  accountNumber: string;
+  accountName: string;
+  bankName: string;
+  bankSlug: string;
+  status: string;
+}
+
+export interface Wallet {
+  balanceKobo: number;
+  currency: string;
+  status: string; // active | frozen | ...
+  minTopupKobo: number;
+  maxBalanceKobo: number;
+  dedicatedAccount: DedicatedAccount | null;
+}
+
+export interface WalletLedgerEntry {
+  id: string;
+  entryType: string;
+  amountKobo: number; // signed: credits +, debits -
+  balanceAfterKobo: number;
+  orderId: string | null;
+  orderNumber: string | null;
+  providerReference: string | null;
+  reason: string | null;
   createdAt: string;
 }

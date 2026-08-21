@@ -3,7 +3,7 @@ import { useMealDirect } from '../store';
 import { AppShell, GlassPanel, Currency, MessageModal } from './CommonUI';
 import { resolveImage, handleImageError } from '../utils/images';
 import { buildSupportMailto, LEGAL_LINKS } from '../utils/support';
-import { isSlotAvailable } from '../utils/helpers';
+import { isSlotAvailable, formatNGN } from '../utils/helpers';
 import { launchPaystackCheckout } from '../utils/paystackPopup';
 import {
   Trash2,
@@ -35,6 +35,7 @@ export const CartView: React.FC = () => {
     fetchOrderQuote,
     validatePromo,
     checkoutAndPay,
+    getWallet,
     isOnline,
     savedLocationIds,
     setCurrentDateTimeLocation,
@@ -55,6 +56,17 @@ export const CartView: React.FC = () => {
   // Large-order surcharge acceptance. Required before checkout when the server
   // quote reports the total exceeds the ₦2,490 standard cap.
   const [acceptLargeOrderSurcharge, setAcceptLargeOrderSurcharge] = useState(false);
+  // v2 wallet + fee model
+  const [paymentMethod, setPaymentMethod] = useState<import('../types').PaymentMethod>('paystack');
+  const [wallet, setWallet] = useState<import('../types').Wallet | null>(null);
+  const [pointDelivery, setPointDelivery] = useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    getWallet().then(w => { if (!cancelled) setWallet(w); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Authoritative server quote (availability + real total). Loaded async; the
   // instant local estimate covers the gap until it arrives.
@@ -140,7 +152,15 @@ export const CartView: React.FC = () => {
   // only a local estimate (missing service fee/discount/surcharge). Block checkout so
   // the user never pays against a wrong figure or hits a late backend rejection.
   const quoteUnavailable = isOnline && !isQuoteLoading && !serverQuote;
-  const blockProceed = hasUnavailable || isQuoteLoading || !isOnline || surchargeBlocksProceed || quoteUnavailable || roomNumberMissing;
+
+  // v2 wallet guards. Balance check is advisory (excludes any point surcharge the
+  // backend adds); the server still enforces it and returns 402 on a real shortfall.
+  const walletFrozen = wallet?.status === 'frozen';
+  const walletBalanceKobo = wallet?.balanceKobo ?? 0;
+  const walletShort = paymentMethod === 'wallet' && !!wallet && walletBalanceKobo < displayTotalKobo;
+  const walletBlocks = paymentMethod === 'wallet' && (walletFrozen || walletShort);
+
+  const blockProceed = hasUnavailable || isQuoteLoading || !isOnline || surchargeBlocksProceed || quoteUnavailable || roomNumberMissing || walletBlocks;
 
   const handleApplyPromo = async () => {
     const code = promoInput.trim();
@@ -212,8 +232,13 @@ export const CartView: React.FC = () => {
 
     // Single consolidated create-order → initialize-payment path (guarded against
     // double submission in the store), so one tap can never make two orders.
-    checkoutAndPay(undefined, appliedPromo || undefined, exceedsStandardCap && acceptLargeOrderSurcharge, roomNumberRequired ? roomNumber : undefined)
+    checkoutAndPay(undefined, appliedPromo || undefined, exceedsStandardCap && acceptLargeOrderSurcharge, roomNumberRequired ? roomNumber : undefined, { paymentMethod, pointDelivery })
       .then(async ({ order, authorizationUrl, accessCode }) => {
+        // Wallet orders are already paid — no Paystack step. Go straight to the order.
+        if (paymentMethod === 'wallet' || !authorizationUrl) {
+          navigateTo(`/orders/${order.id}`);
+          return;
+        }
         // Inline popup keeps the user in the app; the payment-status view behind it
         // polls (first fetch active-verifies), so callbacks only accelerate the
         // resolution. Hosted redirect remains the fallback inside launchPaystackCheckout.
@@ -229,11 +254,21 @@ export const CartView: React.FC = () => {
       })
       .catch(err => {
         setIsCreatingOrder(false);
+        const msg: string = err?.message || '';
+        // v2 wallet: too little balance. Backend rejects with 402 and details.shortfallKobo.
+        if (err?.status === 402 || err?.code === 'WALLET_INSUFFICIENT_BALANCE') {
+          const shortfall = err?.details?.shortfallKobo;
+          setErrorMessage(
+            shortfall
+              ? `Your wallet is short by ${formatNGN(shortfall)}. Top up your wallet or pay with card.`
+              : 'Your wallet balance is too low for this order. Top up your wallet or pay with card.'
+          );
+          return;
+        }
         // Only the surcharge-acceptance rejection re-opens the toggle inline. The
         // backend names the flag in its message, which is the reliable signal —
         // matching on VALIDATION_FAILED/400 alone would swallow unrelated 400s
         // (e.g. an orders_total_formula constraint failure) under a wrong prompt.
-        const msg: string = err?.message || '';
         const isSurchargeRejection = /acceptLargeOrderSurcharge/i.test(msg);
         if (isSurchargeRejection) {
           setAcceptLargeOrderSurcharge(false);
@@ -646,6 +681,61 @@ export const CartView: React.FC = () => {
               </div>
             )}
 
+            {/* v2 fee model: deliver-to-point surcharge opt-in */}
+            <label className="mb-3 flex items-center gap-2.5 cursor-pointer select-none rounded-xl bg-white/5 border border-white/10 p-3">
+              <input
+                type="checkbox"
+                checked={pointDelivery}
+                onChange={(e) => setPointDelivery(e.target.checked)}
+                className="w-4 h-4 rounded accent-mango-warm cursor-pointer shrink-0"
+                id="point_delivery_toggle"
+              />
+              <span className="text-[11px] font-semibold text-white leading-tight">
+                Deliver to my exact spot (hostel room / classroom)
+                <span className="block text-[9px] font-normal text-white/50">Adds a small point-delivery surcharge.</span>
+              </span>
+            </label>
+
+            {/* v2 wallet: payment method */}
+            <div className="mb-3">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-white/60 mb-1.5">Payment method</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('wallet')}
+                  disabled={!wallet}
+                  className={`rounded-xl border p-3 text-left transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                    paymentMethod === 'wallet' ? 'border-mango-warm bg-mango-warm/15' : 'border-white/15 bg-white/5'
+                  }`}
+                  id="pay_with_wallet_btn"
+                >
+                  <span className="block text-[11px] font-bold text-white">Wallet</span>
+                  <span className="block text-[10px] font-semibold text-mango-warm">
+                    {wallet ? formatNGN(wallet.balanceKobo) : 'Unavailable'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('paystack')}
+                  className={`rounded-xl border p-3 text-left transition ${
+                    paymentMethod === 'paystack' ? 'border-mango-warm bg-mango-warm/15' : 'border-white/15 bg-white/5'
+                  }`}
+                  id="pay_with_card_btn"
+                >
+                  <span className="block text-[11px] font-bold text-white">Card / Transfer</span>
+                  <span className="block text-[10px] font-semibold text-white/50">via Paystack</span>
+                </button>
+              </div>
+              {paymentMethod === 'wallet' && walletFrozen && (
+                <p className="mt-2 text-[10px] font-semibold text-red-200">Your wallet is frozen. Choose card, or contact support.</p>
+              )}
+              {paymentMethod === 'wallet' && walletShort && !walletFrozen && (
+                <p className="mt-2 text-[10px] font-semibold text-red-200">
+                  Balance too low. Top up your wallet or pay with card.
+                </p>
+              )}
+            </div>
+
             <button
               onClick={handleProceed}
               disabled={blockProceed}
@@ -663,7 +753,7 @@ export const CartView: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <span>Confirm & Pay with Paystack</span>
+                  <span>{paymentMethod === 'wallet' ? 'Confirm & Pay from Wallet' : 'Confirm & Pay with Paystack'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

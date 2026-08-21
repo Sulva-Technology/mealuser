@@ -75,7 +75,6 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
   const {
     orders,
     navigateTo,
-    confirmDelivery,
     payOrder,
     progressOrderStatus,
     escalations,
@@ -160,15 +159,6 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
     navigator.clipboard.writeText(order.orderNumber);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleConfirmReceipt = async () => {
-    setActionError(null);
-    try {
-      await confirmDelivery(order.id);
-    } catch (err: any) {
-      setActionError(err?.message || 'Could not confirm delivery. Please try again.');
-    }
   };
 
   const handleCancelOrder = () => {
@@ -589,23 +579,14 @@ export const OrderDetailView: React.FC<OrderDetailProps> = ({ orderId }) => {
               })}
             </div>
 
-            {/* Delivery Confirmation Gateway trigger */}
+            {/* Delivered is terminal — v2 removed the customer confirm-receipt step. */}
             {order.status === 'DELIVERED' && (
-              <div className="mt-8 pt-6 border-t border-emerald-deep/8 text-center bg-emerald-deep/5 -mx-6 -mb-6 p-6 rounded-b-2xl animate-fade-in" id="confirm_receipt_gateway">
-                <CheckCircle2 className="w-10 h-10 text-emerald-deep mx-auto mb-3 animate-pulse" />
-                <h4 className="text-xs font-bold text-emerald-strong">Your order has arrived</h4>
+              <div className="mt-8 pt-6 border-t border-emerald-deep/8 text-center bg-emerald-deep/5 -mx-6 -mb-6 p-6 rounded-b-2xl animate-fade-in" id="delivered_gateway">
+                <CheckCircle2 className="w-10 h-10 text-emerald-deep mx-auto mb-3" />
+                <h4 className="text-xs font-bold text-emerald-strong">Your order has been delivered</h4>
                 <p className="text-[10px] text-muted-grey max-w-sm mx-auto mt-1 leading-relaxed">
-                  Your order has been marked as delivered. Please check your items, then confirm below.
+                  Enjoy your meal! Scroll down to leave a review and share feedback with the vendor.
                 </p>
-
-                <button
-                  onClick={handleConfirmReceipt}
-                  className="mt-4 px-6 py-3 bg-emerald-deep hover:bg-emerald-strong text-white font-bold text-xs rounded-xl cursor-pointer transition shadow shadow-emerald-deep/15 active:scale-95 inline-flex items-center gap-1.5"
-                  id="confirm_delivery_action_btn"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Confirm delivery</span>
-                </button>
               </div>
             )}
           </GlassPanel>

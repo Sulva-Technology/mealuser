@@ -565,6 +565,24 @@ export const ProfileView: React.FC = () => {
 				)}
 			</GlassPanel>
 
+			{/* Wallet quick-access (v2) */}
+			<GlassPanel className="p-0 mb-6 animate-fade-in overflow-hidden">
+				<button
+					onClick={() => navigateTo('/wallet')}
+					className="w-full flex items-center gap-3 p-5 text-left cursor-pointer hover:bg-emerald-deep/[0.03] transition-colors"
+					id="profile_wallet_link"
+				>
+					<div className="w-10 h-10 rounded-xl bg-emerald-deep/10 text-emerald-deep flex items-center justify-center shrink-0">
+						<CreditCard className="w-5 h-5" />
+					</div>
+					<div className="flex-1 min-w-0">
+						<h3 className="font-display font-bold text-sm text-emerald-strong">My Wallet</h3>
+						<p className="text-[11px] text-muted-grey">Balance, top up by transfer, and pay for orders instantly.</p>
+					</div>
+					<span className="text-muted-grey text-lg" aria-hidden>›</span>
+				</button>
+			</GlassPanel>
+
 			{/* Dynamic Order History List */}
 			<GlassPanel
 				className="p-6 mb-6 animate-fade-in"

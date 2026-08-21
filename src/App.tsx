@@ -21,6 +21,7 @@ const NotificationsView = React.lazy(() => import("./components/NotificationsVie
 const OfflineView = React.lazy(() => import("./components/OfflineView").then(module => ({ default: module.OfflineView })));
 const OnboardingView = React.lazy(() => import("./components/OnboardingView").then(module => ({ default: module.OnboardingView })));
 const ProfileView = React.lazy(() => import("./components/ProfileView").then(module => ({ default: module.ProfileView })));
+const WalletView = React.lazy(() => import("./components/WalletView").then(module => ({ default: module.WalletView })));
 const VendorDetailView = React.lazy(() => import("./components/VendorDetailView").then(module => ({ default: module.VendorDetailView })));
 const VendorsView = React.lazy(() => import("./components/VendorsView").then(module => ({ default: module.VendorsView })));
 
@@ -72,6 +73,8 @@ const RouteDispatcher: React.FC = () => {
 				return <NotificationsView />;
 			case "/profile":
 				return <ProfileView />;
+			case "/wallet":
+				return <WalletView />;
 			case "/offline":
 				return <OfflineView />;
 			default:

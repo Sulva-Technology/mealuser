@@ -162,7 +162,7 @@ async function sendBackendResponse(res: Response, backendResponse: globalThis.Re
 
 // sha256 of the inline JSON-LD block in index.html. Keep in sync with the same
 // hash in vercel.json (the Vercel static host can't use a per-request nonce).
-const JSONLD_CSP_HASH = "'sha256-YQaCX+CN1JByv0BHWMgnCbdTQpqBRIGgEs2KnbqOET8='";
+const JSONLD_CSP_HASH = "'sha256-7DZnmD1eDnQKhQ16aUtULEoCjTr8O1HQ77CYh+1HOkc='";
 
 function applySecurity(app: Express, backendUrl: string, isProd: boolean) {
   app.use(

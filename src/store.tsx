@@ -19,8 +19,17 @@ import {
   MenuItem,
   ServerQuote,
   PaymentStatusResult,
-  MyReferral
+  MyReferral,
+  PaymentMethod,
+  Wallet,
+  WalletLedgerEntry
 } from './types';
+
+// Options for order creation / checkout (v2 wallet + fee model).
+export interface OrderOptions {
+  paymentMethod?: PaymentMethod;
+  pointDelivery?: boolean;
+}
 import { isSlotAvailable } from './utils/helpers';
 import { triggerVibration, VIBE_PATTERNS } from './utils/vibe';
 import { setMonitoringUser } from './utils/monitoring';
@@ -208,6 +217,8 @@ export async function apiRequest(path: string, method = 'GET', body: any = null,
     // validation failures (e.g. VALIDATION_FAILED for the large-order surcharge).
     (err as any).status = response.status;
     (err as any).code = errorData?.error?.code || errorData?.code;
+    // e.g. wallet 402 carries details.shortfallKobo
+    (err as any).details = errorData?.error?.details || errorData?.details;
     throw err;
   }
 
@@ -336,14 +347,16 @@ interface MealDirectContextType {
 
   // Orders
   orders: Order[];
-  createOrder: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string) => Promise<Order>;
-  checkoutAndPay: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string) => Promise<{ order: Order; authorizationUrl: string; accessCode?: string }>;
+  createOrder: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string, opts?: OrderOptions) => Promise<Order>;
+  checkoutAndPay: (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string, opts?: OrderOptions) => Promise<{ order: Order; authorizationUrl?: string; accessCode?: string }>;
+  getWallet: () => Promise<Wallet | null>;
+  getWalletLedger: () => Promise<WalletLedgerEntry[]>;
+  requestDedicatedAccount: () => Promise<Wallet | null>;
   registerDeviceToken: (options?: { silent?: boolean }) => Promise<boolean>;
   unregisterDeviceToken: () => Promise<boolean>;
   payOrder: (orderId: string) => Promise<{ authorizationUrl: string; accessCode?: string }>;
   refreshOrder: (orderId: string) => Promise<Order | null>;
   fetchPaymentStatus: (orderId: string) => Promise<PaymentStatusResult | null>;
-  confirmDelivery: (orderId: string) => Promise<void>;
   progressOrderStatus: (orderId: string) => void; // Pulls latest authoritative status from backend
   reorderOrder: (orderId: string) => void;
 
@@ -636,7 +649,8 @@ const STATUS_TITLES: Record<string, { title: string; description: string }> = {
   READY: { title: 'Packed & ready 📦', description: 'Your order is packed and ready for the rider.' },
   PICKED_UP: { title: 'Picked up by rider 🚴', description: 'Your rider has picked up your order.' },
   OUT_FOR_DELIVERY: { title: 'Out for delivery 📍', description: 'Your rider is on the way to you.' },
-  DELIVERED: { title: 'Delivered 🏁', description: 'Your order has been delivered. Please confirm receipt.' },
+  DELIVERED: { title: 'Delivered 🏁', description: 'Your order has been delivered. Enjoy your meal!' },
+  // CONFIRMED retained for legacy history rows only — v2 makes DELIVERED terminal.
   CONFIRMED: { title: 'Order Confirmed by Customer 👍', description: 'You confirmed successful delivery. Thank you!' },
   CANCELLED: { title: 'Order Cancelled', description: 'This order has been cancelled.' },
   EXPIRED: { title: 'Order Expired', description: 'Payment window elapsed before confirmation.' },
@@ -1643,7 +1657,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Backend uses strict whitelist validation: menuItemId/quantity per item plus an
   // optional soupOptionId (required for wraps/soup items), a real slot UUID, and no
   // specialInstructions/spoonsCount. Keep this minimal.
-  const buildOrderPayload = (_specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string) => {
+  const buildOrderPayload = (_specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string, opts?: OrderOptions) => {
     if (!cart || !user) throw new Error('Cannot build order: cart or user missing.');
 
     // Resolve a valid delivery-slot UUID (the legacy default "slot_12" is not a UUID)
@@ -1669,6 +1683,11 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     // Only sent on order create (not quote). Signals the user accepted the
     // large-order surcharge when the total exceeds the ₦2,490 standard cap.
     if (acceptLargeOrderSurcharge) payload.acceptLargeOrderSurcharge = true;
+    // v2 fee model: deliver-to-point surcharge opt-in.
+    if (opts?.pointDelivery) payload.pointDelivery = true;
+    // v2 wallet: 'wallet' debits balance and returns an already-paid order;
+    // 'paystack' (default) returns a pending-payment order + checkout link.
+    if (opts?.paymentMethod) payload.paymentMethod = opts.paymentMethod;
     return payload;
   };
 
@@ -1707,12 +1726,15 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Orders Actions
-  const createOrder = async (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string): Promise<Order> => {
+  const createOrder = async (specialInstructions?: string, promotionCode?: string, acceptLargeOrderSurcharge?: boolean, roomNumber?: string, opts?: OrderOptions): Promise<Order> => {
     if (!cart || !user) throw new Error('Cannot create order: Pre-requisites not met.');
 
-    const newOrder = await apiRequest('/orders', 'POST', buildOrderPayload(specialInstructions, promotionCode, acceptLargeOrderSurcharge, roomNumber), null, {
+    const newOrder = await apiRequest('/orders', 'POST', buildOrderPayload(specialInstructions, promotionCode, acceptLargeOrderSurcharge, roomNumber, opts), null, {
       'Idempotency-Key': newIdempotencyKey()
     });
+    // Wallet orders come back already paid — reflect that locally so the UI
+    // skips the Paystack lane. Paystack orders stay pending_payment.
+    const initialStatus = opts?.paymentMethod === 'wallet' ? 'paid' : 'pending_payment';
 
     // Create returns only { orderId }. Enrich from the local cart/quote so the order
     // id resolves and the local card isn't zeroed before the Paystack redirect; full
@@ -1721,7 +1743,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const normalized = normalizeOrder({
       ...newOrder,
       id: newOrder.orderId ?? newOrder.id,
-      orderStatus: 'pending_payment',
+      orderStatus: initialStatus,
       vendorId: cart.vendorId,
       campusId: user.campusId || campuses[0]?.id || '',
       locationId: cart.deliveryLocationId || '',
@@ -1748,8 +1770,9 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     specialInstructions?: string,
     promotionCode?: string,
     acceptLargeOrderSurcharge?: boolean,
-    roomNumber?: string
-  ): Promise<{ order: Order; authorizationUrl: string; accessCode?: string }> => {
+    roomNumber?: string,
+    opts?: OrderOptions
+  ): Promise<{ order: Order; authorizationUrl?: string; accessCode?: string }> => {
     if (checkoutInFlight) {
       throw new Error('A checkout is already in progress. Please wait a moment.');
     }
@@ -1764,12 +1787,47 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
     checkoutInFlight = true;
     try {
-      const order = await createOrder(specialInstructions, promotionCode, acceptLargeOrderSurcharge, roomNumber);
+      const order = await createOrder(specialInstructions, promotionCode, acceptLargeOrderSurcharge, roomNumber, opts);
+      // Wallet orders are already paid on creation — no Paystack initialization.
+      if (opts?.paymentMethod === 'wallet') {
+        triggerVibration(VIBE_PATTERNS.SUCCESS);
+        return { order };
+      }
       const launch = await payOrder(order.id);
       return { order, ...launch };
     } finally {
       checkoutInFlight = false;
     }
+  };
+
+  // --- v2 wallet ---
+  // Balance, advisory limits, and the dedicated top-up account (null until
+  // provisioned / while WALLET_DVA_ENABLED is off). Non-fatal on error.
+  const getWallet = async (): Promise<Wallet | null> => {
+    try {
+      return (await apiRequest('/wallet', 'GET')) as Wallet;
+    } catch (e) {
+      console.warn('getWallet failed:', e);
+      return null;
+    }
+  };
+
+  // Latest wallet movements (newest first). First page only — enough for the
+  // wallet screen; the backend keyset-paginates if we later add "load more".
+  const getWalletLedger = async (): Promise<WalletLedgerEntry[]> => {
+    try {
+      const res = await apiRequest('/wallet/ledger', 'GET');
+      return Array.isArray(res) ? (res as WalletLedgerEntry[]) : [];
+    } catch (e) {
+      console.warn('getWalletLedger failed:', e);
+      return [];
+    }
+  };
+
+  // Idempotently provision (or retry) the customer's dedicated bank account.
+  const requestDedicatedAccount = async (): Promise<Wallet | null> => {
+    await apiRequest('/wallet/dedicated-account', 'POST');
+    return getWallet();
   };
 
   // Initialize Paystack. Returns the inline-popup accessCode plus the hosted
@@ -1843,41 +1901,6 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       console.warn('fetchPaymentStatus failed:', e);
       return null;
     }
-  };
-
-  const confirmDelivery = async (orderId: string) => {
-    triggerVibration(VIBE_PATTERNS.SUCCESS);
-    await apiRequest(`/orders/${orderId}/confirm-delivery`, 'POST');
-    await refreshOrder(orderId);
-
-    setOrders(prev =>
-      prev.map(o => {
-        if (o.id === orderId) {
-          const timestamp = new Date().toISOString();
-          return {
-            ...o,
-            status: 'CONFIRMED',
-            statusHistory: [
-              ...o.statusHistory,
-              {
-                status: 'CONFIRMED',
-                timestamp,
-                title: 'Order Confirmed by Customer 👍',
-                description: 'You indicated successful checkout delivery. Thank you for dining with Meal Direct!'
-              }
-            ]
-          };
-        }
-        return o;
-      })
-    );
-
-    addNotification(
-      'Order Confirmed 👍',
-      'You have confirmed clean delivery. Write a vendor review to share feedback!',
-      'order_status',
-      orderId
-    );
   };
 
   const reorderOrder = (orderId: string) => {
@@ -2225,12 +2248,14 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         orders,
         createOrder,
         checkoutAndPay,
+        getWallet,
+        getWalletLedger,
+        requestDedicatedAccount,
         registerDeviceToken,
         unregisterDeviceToken,
         payOrder,
         refreshOrder,
         fetchPaymentStatus,
-        confirmDelivery,
         progressOrderStatus,
         reorderOrder,
 
