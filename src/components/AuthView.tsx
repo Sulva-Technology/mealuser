@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { useMealDirect, isEmailUnconfirmedError } from '../store';
 import { AppShell, GlassPanel, Currency } from './CommonUI';
 import { LogIn, UserPlus, AlertCircle, MailCheck, KeyRound, ArrowLeft } from 'lucide-react';
+import { readCampusLinkFromUrl, trackFunnel } from '../utils/analytics';
 
 export const AuthView: React.FC = () => {
   const { signIn, signUp, requestPasswordReset, resendConfirmation } = useMealDirect();
-  const [isLogin, setIsLogin] = useState(true);
+  // Visitors arriving on a ?campus= link are new students, so open on Sign Up.
+  const [isLogin, setIsLogin] = useState(() => !readCampusLinkFromUrl());
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +68,7 @@ export const AuthView: React.FC = () => {
       if (isLogin) {
         await signIn(email, password);
       } else {
+        trackFunnel('signup_started');
         const { needsConfirmation } = await signUp(email, password);
         if (needsConfirmation) {
           setPendingEmail(email);

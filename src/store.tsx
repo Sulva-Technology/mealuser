@@ -33,6 +33,7 @@ export interface OrderOptions {
 import { isSlotAvailable } from './utils/helpers';
 import { triggerVibration, VIBE_PATTERNS } from './utils/vibe';
 import { setMonitoringUser } from './utils/monitoring';
+import { trackFunnel } from './utils/analytics';
 import { getMessagingIfSupported } from './utils/firebase';
 import { getToken, deleteToken, onMessage } from 'firebase/messaging';
 
@@ -1271,6 +1272,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const signUp = async (email: string, password: string): Promise<{ needsConfirmation: boolean }> => {
     try {
       await authRequest('/customer/signup', 'POST', { email, password });
+      // The account exists now, whatever happens with the follow-up sign-in.
+      trackFunnel('signup_completed');
     } catch (err: any) {
       console.error(err);
       // Some backends respond to signup itself with an "email confirmation sent"

@@ -4,6 +4,7 @@ import { PresetLocation } from '../types';
 import { AppShell, GlassPanel } from './CommonUI';
 import { MapPin, Phone, Check, ShieldAlert, Library, Home, ChevronRight, Globe, User, Loader2, RefreshCw, Gift } from 'lucide-react';
 import { COUNTRIES, validateCountryPhone } from '../utils/countries';
+import { getCampusLink, trackFunnel } from '../utils/analytics';
 
 export const OnboardingView: React.FC = () => {
   const { user, completeOnboarding, navigateTo, campuses: CAMPUSES, redeemReferral, pendingReferralCode } = useMealDirect();
@@ -22,9 +23,17 @@ export const OnboardingView: React.FC = () => {
   const [terminalsLoading, setTerminalsLoading] = useState(false);
   const [terminalsError, setTerminalsError] = useState<string | null>(null);
 
+  // Preselect the campus from a ?campus=<slug> link when it matches; otherwise the first campus.
   useEffect(() => {
     if (!selectedCampus && CAMPUSES.length > 0) {
-      setSelectedCampus(CAMPUSES[0].id);
+      const linkSlug = getCampusLink();
+      const linked = linkSlug ? CAMPUSES.find(c => c.slug === linkSlug) : undefined;
+      if (linked) {
+        setSelectedCampus(linked.id);
+        trackFunnel('campus_selected', { campusId: linked.id });
+      } else {
+        setSelectedCampus(CAMPUSES[0].id);
+      }
     }
   }, [CAMPUSES, selectedCampus]);
 
@@ -253,6 +262,7 @@ export const OnboardingView: React.FC = () => {
                 onChange={(e) => {
                   setSelectedCampus(e.target.value);
                   setSelectedLocation('');
+                  trackFunnel('campus_selected', { campusId: e.target.value });
                 }}
                 className="w-full px-4 py-3 bg-white border border-emerald-deep/15 rounded-xl font-medium text-xs focus:ring-2 focus:ring-emerald-deep cursor-pointer focus:outline-none"
               >
@@ -300,7 +310,13 @@ export const OnboardingView: React.FC = () => {
                         <button
                           type="button"
                           key={loc.id}
-                          onClick={() => setSelectedLocation(loc.id)}
+                          onClick={() => {
+                            setSelectedLocation(loc.id);
+                            // Picking a delivery point also confirms the campus (covers the
+                            // default first campus, which fires no change event).
+                            trackFunnel('campus_selected', { campusId: selectedCampus });
+                            trackFunnel('location_selected', { campusId: selectedCampus });
+                          }}
                           className={`flex items-center justify-between p-3.5 rounded-xl text-left border transition text-xs cursor-pointer ${
                             selectedLocation === loc.id
                               ? 'border-emerald-deep bg-emerald-deep/6 text-emerald-strong font-semibold'

@@ -241,3 +241,19 @@ describe('mergeServerOrders', () => {
     expect(merged.some(o => o.id === 'local_1')).toBe(true);
   });
 });
+
+describe('campus links', () => {
+  it('reads and normalizes ?campus=<slug>', async () => {
+    const { readCampusLinkFromUrl } = await import('../utils/analytics');
+    expect(readCampusLinkFromUrl('?campus=UNILAG')).toBe('unilag');
+    expect(readCampusLinkFromUrl('?ref=K7M2QX9A&campus=venite-university')).toBe('venite-university');
+    expect(readCampusLinkFromUrl('?campus=')).toBeNull();
+    expect(readCampusLinkFromUrl('?campus=bad slug!')).toBeNull();
+    expect(readCampusLinkFromUrl('')).toBeNull();
+  });
+
+  it('never throws when tracking without a browser', async () => {
+    const { trackFunnel } = await import('../utils/analytics');
+    expect(() => trackFunnel('signup_started')).not.toThrow();
+  });
+});

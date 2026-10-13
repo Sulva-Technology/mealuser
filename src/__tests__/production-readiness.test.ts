@@ -306,6 +306,48 @@ describe('BFF auth and CSRF behavior', () => {
     ]);
   });
 
+  it('forwards funnel events, attaching the session only with a matching CSRF header', async () => {
+    const seen: Array<{ url: string; auth?: string; body: unknown }> = [];
+    const app = createApp({
+      backendUrl: 'https://backend.test',
+      isProd: false,
+      fetchImpl: async (input, init) => {
+        const headers = new Headers(init?.headers);
+        seen.push({
+          url: String(input),
+          auth: headers.get('authorization') || undefined,
+          body: JSON.parse(String(init?.body))
+        });
+        return new Response(null, { status: 204 });
+      }
+    });
+    const event = { event: 'signup_started', anonymousId: '33333333-3333-4333-8333-333333333333' };
+
+    // Before sign-in: no cookies at all, still accepted (no CSRF gate).
+    await request(app).post('/api/analytics/events').send(event).expect(204);
+
+    // Session cookie without the CSRF header: forwarded anonymously.
+    await request(app)
+      .post('/api/analytics/events')
+      .set('Cookie', ['md_access_token=access-1', 'md_csrf=csrf-1'])
+      .send(event)
+      .expect(204);
+
+    // Matching CSRF header: forwarded as the signed-in user.
+    await request(app)
+      .post('/api/analytics/events')
+      .set('Cookie', ['md_access_token=access-1', 'md_csrf=csrf-1'])
+      .set('X-MealDirect-CSRF', 'csrf-1')
+      .send(event)
+      .expect(204);
+
+    expect(seen).toEqual([
+      { url: 'https://backend.test/v1/analytics/events', body: event },
+      { url: 'https://backend.test/v1/analytics/events', body: event },
+      { url: 'https://backend.test/v1/analytics/events', auth: 'Bearer access-1', body: event }
+    ]);
+  });
+
   it('sets HttpOnly auth cookies and a readable CSRF cookie on customer login', async () => {
     const app = createApp({
       backendUrl: 'https://backend.test',

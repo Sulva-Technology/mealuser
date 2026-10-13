@@ -4,8 +4,11 @@ import App from './App.tsx';
 import {ErrorBoundary} from './components/ErrorBoundary';
 import './index.css';
 import {captureError, initMonitoring} from './utils/monitoring';
+import {captureCampusLink} from './utils/analytics';
 
 initMonitoring();
+// Remember a ?campus=<slug> link (ambassador/flyer links) and record that it was opened.
+captureCampusLink();
 
 window.addEventListener('unhandledrejection', event => {
   captureError(event.reason, { source: 'unhandledrejection' });

@@ -406,6 +406,34 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   );
 
+  // Signup funnel events, forwarded to the backend's public POST /v1/analytics/events.
+  // Works before sign-in (no CSRF cookie yet), so it bypasses the /api/v1 CSRF gate.
+  // The session is attached only when the CSRF header matches, so a cross-site page
+  // can't attribute steps to a signed-in user; otherwise the step is recorded
+  // anonymously. The backend validates the body.
+  app.post('/api/analytics/events', async (req, res) => {
+    const cookies = parseCookies(req.headers.cookie);
+    const csrfCookie = cookies[CSRF_COOKIE];
+    const csrfOk = Boolean(csrfCookie) && req.header('x-mealdirect-csrf') === csrfCookie;
+    const accessToken = csrfOk ? cookies[ACCESS_COOKIE] : undefined;
+
+    try {
+      const backendResponse = await fetchImpl(`${backendUrl}/v1/analytics/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+        },
+        body: JSON.stringify(req.body ?? {})
+      });
+      await sendBackendResponse(res, backendResponse);
+    } catch (error) {
+      console.error('Analytics event proxy failed:', error);
+      res.status(502).json({ error: { code: 'BACKEND_UNAVAILABLE', message: 'Backend service unavailable.' } });
+    }
+  });
+
   // Deterministic local nutrition estimate (no external AI dependency)
   const nutritionCache = new Map<string, any>();
   app.post('/api/nutrition', (req, res) => {

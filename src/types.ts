@@ -2,6 +2,7 @@ export interface Campus {
   id: string;
   name: string;
   code: string;
+  slug?: string; // backend campus slug, matched against ?campus=<slug> links
 }
 
 export interface PresetLocation {
