@@ -161,7 +161,14 @@ async function authRequest(path: string, method = 'POST', body: any = null): Pro
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    const err = new Error(errorData?.error?.message || errorData?.message || `HTTP ${response.status}`);
+    const rawMessage = errorData?.error?.message || errorData?.message;
+    // Never show a serialized object ("{}", "[object Object]") — upstream auth
+    // failures have surfaced that way. Fall back to a readable message instead.
+    const readable =
+      typeof rawMessage === 'string' && rawMessage.trim() && !/^(\{\s*\}|\[object Object\])$/.test(rawMessage.trim());
+    const err = new Error(
+      readable ? rawMessage : `We could not complete that right now (HTTP ${response.status}). Please try again in a few minutes.`
+    );
     // Preserve the HTTP status so callers can distinguish e.g. 401 (bad creds)
     // from 403 (valid creds, wrong portal) without parsing the message.
     (err as any).status = response.status;
