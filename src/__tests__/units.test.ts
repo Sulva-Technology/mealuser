@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatNGN, isSlotAvailable, computeSpendHistory, MAX_ORDER_TOTAL_KOBO } from '../utils/helpers';
+import { campusDisplayName, formatNGN, isSlotAvailable, computeSpendHistory, MAX_ORDER_TOTAL_KOBO } from '../utils/helpers';
 import { resolveImage } from '../utils/images';
 import {
   normalizeStatus,
@@ -255,5 +255,23 @@ describe('campus links', () => {
   it('never throws when tracking without a browser', async () => {
     const { trackFunnel } = await import('../utils/analytics');
     expect(() => trackFunnel('signup_started')).not.toThrow();
+  });
+});
+
+describe('campusDisplayName', () => {
+  const campuses = [
+    { id: 'c1', name: 'Venite University', code: 'VU' },
+    { id: 'c2', name: 'Covenant University', code: 'CU' },
+  ];
+
+  it("names the student's own campus, not the first one", () => {
+    expect(campusDisplayName(campuses, 'c2')).toBe('Covenant University');
+  });
+
+  it('is empty while campuses load or when the campus is unknown', () => {
+    expect(campusDisplayName([], 'c2')).toBe('');
+    expect(campusDisplayName(campuses, 'missing')).toBe('');
+    expect(campusDisplayName(campuses, '')).toBe('');
+    expect(campusDisplayName(undefined, 'c1')).toBe('');
   });
 });
