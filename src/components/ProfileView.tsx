@@ -864,7 +864,8 @@ export const ProfileView: React.FC = () => {
 							</label>
 							<input
 								type="email"
-								value={user?.email || "student@university.edu"}
+								value={user?.email || ""}
+									placeholder="you@example.com"
 								disabled
 								className="w-full px-4 py-3 bg-neutral-50/50 border border-emerald-deep/15 rounded-xl text-xs font-semibold text-muted-grey cursor-not-allowed"
 								id="profile_email_input"

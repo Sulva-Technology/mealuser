@@ -212,7 +212,7 @@ export const AuthView: React.FC = () => {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   className="w-full px-4 py-3 bg-white border border-emerald-deep/15 rounded-xl font-medium text-sm focus:ring-2 focus:ring-emerald-deep focus:border-transparent outline-none transition-all text-ink-deep"
-                  placeholder="student@venite.edu.ng"
+                  placeholder="you@example.com"
                   required
                 />
               </div>
@@ -280,7 +280,7 @@ export const AuthView: React.FC = () => {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 className="w-full px-4 py-3 bg-white border border-emerald-deep/15 rounded-xl font-medium text-sm focus:ring-2 focus:ring-emerald-deep focus:border-transparent outline-none transition-all text-ink-deep"
-                placeholder="student@venite.edu.ng"
+                placeholder="you@example.com"
                 required
               />
             </div>
