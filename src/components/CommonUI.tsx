@@ -25,7 +25,7 @@ import {
   Package,
   Wallet as WalletIcon
 } from 'lucide-react';
-import { formatNGN } from '../utils/helpers';
+import { campusDisplayName, formatNGN } from '../utils/helpers';
 
 // Premium Currency formatting
 export const Currency: React.FC<{ kobo: number; className?: string }> = ({ kobo, className = '' }) => {
@@ -166,7 +166,8 @@ interface AppShellProps {
 }
 
 export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
-  const { user, navigateTo, signOut, notifications, cart, activeInAppAlert, dismissInAppAlert } = useMealDirect();
+  const { user, campuses, navigateTo, signOut, notifications, cart, activeInAppAlert, dismissInAppAlert } = useMealDirect();
+  const campusName = campusDisplayName(campuses, user?.campusId);
   // Real PWA install handling. `beforeinstallprompt` only fires on Chromium
   // (Android/desktop) once the app meets installability criteria and isn't
   // already installed. iOS Safari never fires it — there we show manual
@@ -404,7 +405,9 @@ export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
                   Customer
                 </span>
               </h1>
-              <p className="text-[10px] text-muted-grey font-medium leading-none tracking-wide">Venite University</p>
+              {campusName && (
+                <p className="text-[10px] text-muted-grey font-medium leading-none tracking-wide">{campusName}</p>
+              )}
             </div>
           </div>
         </div>

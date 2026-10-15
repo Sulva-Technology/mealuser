@@ -1,4 +1,4 @@
-import type { Order, MenuItem, OrderStatus } from '../types';
+import type { Campus, Order, MenuItem, OrderStatus } from '../types';
 
 export interface WeeklySpend {
   weekLabel: string;
@@ -168,3 +168,10 @@ export const isSlotAvailable = (slotTime: string, targetDateStr: string, mockCur
 
   return (slotMinutes - currentMinutes) >= 60;
 };
+
+// Name of the student's own campus for the app header. Empty while campuses are still
+// loading or when the profile has no campus, so the header never names the wrong school.
+export function campusDisplayName(campuses: readonly Campus[] | null | undefined, campusId: string | null | undefined): string {
+  if (!campusId || !Array.isArray(campuses)) return '';
+  return campuses.find(c => c.id === campusId)?.name?.trim() || '';
+}
