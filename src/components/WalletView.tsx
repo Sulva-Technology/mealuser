@@ -52,14 +52,14 @@ export const WalletView: React.FC = () => {
   const frozen = wallet?.status === 'frozen';
 
   return (
-    <AppShell activeTab="profile">
+    <AppShell activeTab="wallet">
       <PullToRefresh onRefresh={load}>
         <div className="max-w-2xl mx-auto pb-8">
           <button
-            onClick={() => navigateTo('/profile')}
+            onClick={() => navigateTo('/home')}
             className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-strong mb-4 cursor-pointer hover:underline"
           >
-            <ArrowLeft className="w-4 h-4" /> Back to profile
+            <ArrowLeft className="w-4 h-4" /> Back to home
           </button>
 
           {isLoading ? (

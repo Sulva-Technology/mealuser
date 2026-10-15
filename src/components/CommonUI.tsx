@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useMealDirect } from '../store';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -22,7 +22,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Info,
-  Package
+  Package,
+  Wallet as WalletIcon
 } from 'lucide-react';
 import { formatNGN } from '../utils/helpers';
 
@@ -161,7 +162,7 @@ export const OfflineBanner: React.FC = () => {
 
 interface AppShellProps {
   children: React.ReactNode;
-  activeTab: 'home' | 'vendors' | 'cart' | 'orders' | 'profile' | 'none';
+  activeTab: 'home' | 'vendors' | 'cart' | 'orders' | 'wallet' | 'profile' | 'none';
 }
 
 export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
@@ -215,8 +216,32 @@ export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
     { key: 'vendors', label: 'Vendors', icon: Store, path: '/vendors' },
     { key: 'cart', label: 'Cart', icon: ShoppingBag, path: '/cart', badge: cartItemCount },
     { key: 'orders', label: 'Orders', icon: Clock, path: '/orders' },
-    { key: 'profile', label: 'Profile', icon: User, path: '/profile' }
+    { key: 'wallet', label: 'Wallet', icon: WalletIcon, path: '/wallet' }
   ];
+
+  // Header avatar menu (Profile / Log out). Closes on outside tap or Escape.
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // avatarUrl is a short-lived signed URL; retry the image whenever it changes.
+  useEffect(() => { setAvatarFailed(false); }, [user?.avatarUrl]);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!accountMenuRef.current?.contains(e.target as Node)) setAccountMenuOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAccountMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [accountMenuOpen]);
 
   const handleDismissPwa = () => {
     localStorage.setItem('md_pwa_prompt_dismissed', 'true');
@@ -403,20 +428,60 @@ export const AppShell: React.FC<AppShellProps> = ({ children, activeTab }) => {
             </button>
           )}
 
-          {/* Log Out Widget */}
+          {/* Avatar menu: Profile + Log out */}
           {user && (
-            <div className="flex items-center gap-2 border-l border-emerald-deep/12 pl-3">
+            <div className="relative flex items-center gap-2 border-l border-emerald-deep/12 pl-3" ref={accountMenuRef}>
               <span className="hidden md:inline text-xs font-semibold text-emerald-strong bg-emerald-deep/5 px-2.5 py-1.5 rounded-lg border border-emerald-deep/10">
                 {user.fullName}
               </span>
               <button
-                onClick={signOut}
-                className="p-2 rounded-xl text-muted-grey hover:bg-red-50 hover:text-danger hover:border-red-100 transition-all cursor-pointer border border-transparent"
-                title="Log out of application"
-                id="logout_action"
+                onClick={() => setAccountMenuOpen(open => !open)}
+                className={`w-9 h-9 rounded-full overflow-hidden bg-emerald-deep/10 text-emerald-deep font-bold text-sm uppercase flex items-center justify-center border-2 transition cursor-pointer ${
+                  activeTab === 'profile' || accountMenuOpen ? 'border-emerald-deep' : 'border-emerald-deep/20 hover:border-emerald-deep/50'
+                }`}
+                id="account_menu_btn"
+                aria-label="Open account menu"
+                aria-haspopup="menu"
+                aria-expanded={accountMenuOpen}
               >
-                <LogOut className="w-4 h-4" />
+                {user.avatarUrl && !avatarFailed ? (
+                  <img
+                    src={user.avatarUrl}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    onError={() => setAvatarFailed(true)}
+                  />
+                ) : (
+                  user.fullName?.charAt(0) || 'G'
+                )}
               </button>
+
+              {accountMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full mt-2 w-44 bg-white rounded-2xl border border-emerald-deep/10 shadow-xl overflow-hidden z-50 animate-fade-in"
+                  id="account_menu"
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => { setAccountMenuOpen(false); navigateTo('/profile'); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-xs font-semibold text-ink-deep hover:bg-emerald-deep/5 cursor-pointer text-left"
+                    id="account_menu_profile"
+                  >
+                    <User className="w-4 h-4 text-emerald-deep" />
+                    Profile
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => { setAccountMenuOpen(false); signOut(); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-xs font-semibold text-danger hover:bg-red-50 cursor-pointer text-left border-t border-emerald-deep/8"
+                    id="logout_action"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Log out
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
