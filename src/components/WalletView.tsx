@@ -73,6 +73,9 @@ export const WalletView: React.FC = () => {
         setNotice('Bank account numbers are coming soon. Top up with card or bank transfer below.');
       } else {
         setError(message);
+        // Pick up the recorded failure so the panel shows the retry state, not stale data.
+        const w = await getWallet();
+        if (w) setWallet(w);
       }
     } finally {
       setProvisioning(false);
@@ -134,7 +137,13 @@ export const WalletView: React.FC = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const dva = wallet?.dedicatedAccount ?? null;
+  // Only a live account is real: a failed attempt leaves placeholder details like
+  // "pending:<walletId>" that must never be shown as something to transfer to.
+  const rawDva = wallet?.dedicatedAccount ?? null;
+  const dva =
+    rawDva && rawDva.status === 'active' && !rawDva.accountNumber.startsWith('pending') ? rawDva : null;
+  const dvaFailed =
+    wallet?.dedicatedAccountStatus === 'failed' || (rawDva !== null && rawDva.status === 'failed');
   const frozen = wallet?.status === 'frozen';
   const dvaFeePercent = (wallet?.dedicatedAccountFeeBps ?? 0) / 100;
   const dvaFeeCapKobo = wallet?.dedicatedAccountFeeCapKobo ?? 0;
@@ -289,6 +298,24 @@ export const WalletView: React.FC = () => {
                   <p className="text-[11px] text-muted-grey leading-relaxed">
                     A personal account number for transfers is coming soon. Use “Add money” above in the meantime.
                   </p>
+                ) : dvaFailed ? (
+                  <>
+                    <p className="text-[11px] text-muted-grey mb-2 leading-relaxed">
+                      We couldn't create your account number yet. Use “Add money” above in the meantime, or try again.
+                    </p>
+                    {wallet.dedicatedAccountError && (
+                      <p className="mb-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[10px] text-red-700">
+                        {wallet.dedicatedAccountError}
+                      </p>
+                    )}
+                    <button
+                      onClick={handleProvision}
+                      disabled={provisioning}
+                      className="px-4 py-2.5 bg-emerald-deep hover:bg-emerald-strong disabled:opacity-60 text-white font-bold text-xs rounded-xl cursor-pointer transition active:scale-95"
+                    >
+                      {provisioning ? 'Trying again…' : 'Try again'}
+                    </button>
+                  </>
                 ) : (
                   <>
                     <p className="text-[11px] text-muted-grey mb-4 leading-relaxed">

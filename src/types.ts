@@ -289,6 +289,10 @@ export interface Wallet {
   /** Maximum fee per dedicated-account transfer in kobo (0 = no cap). */
   dedicatedAccountFeeCapKobo?: number;
   dedicatedAccount: DedicatedAccount | null;
+  /** 'none' | 'pending' | 'active' | 'failed' | 'deactivated' (newer backends only). */
+  dedicatedAccountStatus?: string;
+  /** Why the last attempt failed, when dedicatedAccountStatus is 'failed'. */
+  dedicatedAccountError?: string | null;
 }
 
 export interface WalletLedgerEntry {
