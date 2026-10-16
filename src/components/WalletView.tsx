@@ -9,7 +9,8 @@ import { launchPaystackCheckout } from '../utils/paystackPopup';
 import type { Wallet, WalletLedgerEntry } from '../types';
 
 export const WalletView: React.FC = () => {
-  const { getWallet, getWalletLedger, requestDedicatedAccount, startWalletTopup, navigateTo } = useMealDirect();
+  const { getWallet, getWalletLedger, requestDedicatedAccount, startWalletTopup, quoteWalletTopup, navigateTo } =
+    useMealDirect();
 
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
@@ -20,6 +21,9 @@ export const WalletView: React.FC = () => {
   const [notice, setNotice] = useState<string | null>(null);
   const [topupNaira, setTopupNaira] = useState('');
   const [toppingUp, setToppingUp] = useState(false);
+  const [topupQuote, setTopupQuote] = useState<{ amountKobo: number; feeKobo: number; chargeKobo: number } | null>(
+    null
+  );
   // Set once the backend says dedicated accounts are switched off, so we stop
   // offering a button that cannot succeed and point at card top-up instead.
   const [dvaUnavailable, setDvaUnavailable] = useState(false);
@@ -35,6 +39,26 @@ export const WalletView: React.FC = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Show what the customer will actually pay (amount + Paystack fee) as they type.
+  useEffect(() => {
+    const amountKobo = Math.round(Number(topupNaira) * 100);
+    if (!Number.isFinite(amountKobo) || amountKobo < 100) {
+      setTopupQuote(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      quoteWalletTopup(amountKobo).then(q => {
+        if (!cancelled) setTopupQuote(q && q.amountKobo === amountKobo ? q : null);
+      });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topupNaira]);
 
   const handleProvision = async () => {
     setProvisioning(true);
@@ -200,6 +224,13 @@ export const WalletView: React.FC = () => {
                     {toppingUp ? 'Starting…' : 'Top up'}
                   </button>
                 </div>
+                {topupQuote && topupQuote.feeKobo > 0 && (
+                  <p className="mt-2 text-[11px] text-emerald-strong">
+                    You pay <span className="font-bold">{formatNGN(topupQuote.chargeKobo)}</span> — includes{' '}
+                    {formatNGN(topupQuote.feeKobo)} Paystack fee. Your wallet gets{' '}
+                    <span className="font-bold">{formatNGN(topupQuote.amountKobo)}</span>.
+                  </p>
+                )}
                 {wallet.minTopupKobo > 0 && (
                   <p className="mt-2 text-[10px] text-muted-grey">Minimum top-up: {formatNGN(wallet.minTopupKobo)}.</p>
                 )}
