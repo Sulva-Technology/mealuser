@@ -360,6 +360,7 @@ interface MealDirectContextType {
   getWallet: () => Promise<Wallet | null>;
   getWalletLedger: () => Promise<WalletLedgerEntry[]>;
   requestDedicatedAccount: () => Promise<Wallet | null>;
+  startWalletTopup: (amountKobo: number) => Promise<{ authorizationUrl: string; accessCode?: string; reference: string }>;
   registerDeviceToken: (options?: { silent?: boolean }) => Promise<boolean>;
   unregisterDeviceToken: () => Promise<boolean>;
   payOrder: (orderId: string) => Promise<{ authorizationUrl: string; accessCode?: string }>;
@@ -1840,6 +1841,18 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return getWallet();
   };
 
+  // Start a Paystack checkout that funds the wallet (card, bank transfer, USSD).
+  // Works even while dedicated accounts are off. The balance is credited by the
+  // backend webhook, so callers refresh the wallet after the popup succeeds.
+  const startWalletTopup = async (
+    amountKobo: number
+  ): Promise<{ authorizationUrl: string; accessCode?: string; reference: string }> => {
+    const res = await apiRequest('/wallet/topup', 'POST', { amountKobo });
+    const authorizationUrl = res?.authorizationUrl || res?.authorization_url;
+    if (!authorizationUrl) throw new Error('Could not start the top-up. Please try again.');
+    return { authorizationUrl, accessCode: res?.accessCode || res?.access_code, reference: res?.reference };
+  };
+
   // Initialize Paystack. Returns the inline-popup accessCode plus the hosted
   // authorization URL (redirect fallback). Does NOT mark the order paid — payment
   // truth comes from the backend webhook/active verify, surfaced via
@@ -2261,6 +2274,7 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         getWallet,
         getWalletLedger,
         requestDedicatedAccount,
+        startWalletTopup,
         registerDeviceToken,
         unregisterDeviceToken,
         payOrder,
