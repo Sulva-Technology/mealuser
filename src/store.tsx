@@ -1728,11 +1728,11 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   ): Promise<{ valid: boolean; discountKobo: number; message?: string }> => {
     if (!cart || !user) return { valid: false, discountKobo: 0, message: 'Add items to your cart first.' };
     try {
+      // Backend contract (ValidatePromotionDto) is exactly { code, subtotalKobo }; it rejects
+      // any other property with "property X should not exist".
       const res = await apiRequest('/promotions/validate', 'POST', {
         code: code.trim(),
-        campusId: user.campusId || campuses[0]?.id || '',
-        vendorId: cart.vendorId,
-        foodSubtotalKobo: getCartQuote().subtotalKobo
+        subtotalKobo: getCartQuote().subtotalKobo
       });
       const discountKobo = res?.discountKobo ?? res?.amountKobo ?? res?.discount ?? 0;
       const valid = res?.valid !== false; // treat presence/no-error as valid
