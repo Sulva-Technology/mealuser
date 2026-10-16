@@ -286,6 +286,8 @@ export interface Wallet {
   maxBalanceKobo: number;
   /** Fee on bank transfers into the dedicated account (basis points; 100 = 1%). */
   dedicatedAccountFeeBps?: number;
+  /** Maximum fee per dedicated-account transfer in kobo (0 = no cap). */
+  dedicatedAccountFeeCapKobo?: number;
   dedicatedAccount: DedicatedAccount | null;
 }
 

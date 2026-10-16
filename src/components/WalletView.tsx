@@ -137,6 +137,14 @@ export const WalletView: React.FC = () => {
   const dva = wallet?.dedicatedAccount ?? null;
   const frozen = wallet?.status === 'frozen';
   const dvaFeePercent = (wallet?.dedicatedAccountFeeBps ?? 0) / 100;
+  const dvaFeeCapKobo = wallet?.dedicatedAccountFeeCapKobo ?? 0;
+  const dvaFeeLabel =
+    dvaFeePercent > 0 ? `${dvaFeePercent}%${dvaFeeCapKobo > 0 ? ` (max ${formatNGN(dvaFeeCapKobo)})` : ''}` : '';
+  // Same rule as the backend: percentage, capped, nearest kobo.
+  const dvaFeeFor = (kobo: number) => {
+    const fee = Math.round((kobo * (wallet?.dedicatedAccountFeeBps ?? 0)) / 10_000);
+    return dvaFeeCapKobo > 0 ? Math.min(fee, dvaFeeCapKobo) : fee;
+  };
 
   return (
     <AppShell activeTab="wallet">
@@ -267,10 +275,8 @@ export const WalletView: React.FC = () => {
                     </div>
                     {dvaFeePercent > 0 && (
                       <p className="mt-3 text-[11px] text-emerald-strong">
-                        A {dvaFeePercent}% fee is deducted from each transfer — send{' '}
-                        {formatNGN(1_000_000)}, get{' '}
-                        {formatNGN(1_000_000 - Math.round((1_000_000 * (wallet.dedicatedAccountFeeBps ?? 0)) / 10_000))}{' '}
-                        in your wallet.
+                        A {dvaFeeLabel} fee is deducted from each transfer — send {formatNGN(1_000_000)}, get{' '}
+                        {formatNGN(1_000_000 - dvaFeeFor(1_000_000))} in your wallet.
                       </p>
                     )}
                     {wallet.minTopupKobo > 0 && (
@@ -287,7 +293,7 @@ export const WalletView: React.FC = () => {
                   <>
                     <p className="text-[11px] text-muted-grey mb-4 leading-relaxed">
                       Get a personal account number so you can top up any time by bank transfer
-                      {dvaFeePercent > 0 ? ` (${dvaFeePercent}% fee per transfer)` : ''}.
+                      {dvaFeePercent > 0 ? ` (${dvaFeeLabel} fee per transfer)` : ''}.
                     </p>
                     <button
                       onClick={handleProvision}
