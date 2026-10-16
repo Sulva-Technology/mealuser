@@ -284,6 +284,8 @@ export interface Wallet {
   status: string; // active | frozen | ...
   minTopupKobo: number;
   maxBalanceKobo: number;
+  /** Fee on bank transfers into the dedicated account (basis points; 100 = 1%). */
+  dedicatedAccountFeeBps?: number;
   dedicatedAccount: DedicatedAccount | null;
 }
 

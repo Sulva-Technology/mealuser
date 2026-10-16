@@ -136,6 +136,7 @@ export const WalletView: React.FC = () => {
 
   const dva = wallet?.dedicatedAccount ?? null;
   const frozen = wallet?.status === 'frozen';
+  const dvaFeePercent = (wallet?.dedicatedAccountFeeBps ?? 0) / 100;
 
   return (
     <AppShell activeTab="wallet">
@@ -264,6 +265,14 @@ export const WalletView: React.FC = () => {
                       />
                       <Row label="Account name" value={dva.accountName} />
                     </div>
+                    {dvaFeePercent > 0 && (
+                      <p className="mt-3 text-[11px] text-emerald-strong">
+                        A {dvaFeePercent}% fee is deducted from each transfer — send{' '}
+                        {formatNGN(1_000_000)}, get{' '}
+                        {formatNGN(1_000_000 - Math.round((1_000_000 * (wallet.dedicatedAccountFeeBps ?? 0)) / 10_000))}{' '}
+                        in your wallet.
+                      </p>
+                    )}
                     {wallet.minTopupKobo > 0 && (
                       <p className="mt-3 text-[10px] text-muted-grey">
                         Suggested minimum top-up: {formatNGN(wallet.minTopupKobo)}.
@@ -277,7 +286,8 @@ export const WalletView: React.FC = () => {
                 ) : (
                   <>
                     <p className="text-[11px] text-muted-grey mb-4 leading-relaxed">
-                      Get a personal account number so you can top up any time by bank transfer.
+                      Get a personal account number so you can top up any time by bank transfer
+                      {dvaFeePercent > 0 ? ` (${dvaFeePercent}% fee per transfer)` : ''}.
                     </p>
                     <button
                       onClick={handleProvision}
