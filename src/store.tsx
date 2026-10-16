@@ -346,7 +346,7 @@ interface MealDirectContextType {
   clearCart: () => void;
   setCartDateTimeLocation: (date: string, slotId: string, locationId: string) => void;
   getCartQuote: () => OrderQuote;
-  fetchOrderQuote: (promotionCode?: string) => Promise<ServerQuote | null>;
+  fetchOrderQuote: (promotionCode?: string, paymentMethod?: PaymentMethod) => Promise<ServerQuote | null>;
   validatePromo: (code: string) => Promise<{ valid: boolean; discountKobo: number; message?: string }>;
   // Restore the cart snapshot stashed at checkout, so a cancelled/failed payment
   // doesn't drop the user on an empty cart. True if a snapshot was restored.
@@ -360,6 +360,8 @@ interface MealDirectContextType {
   getWallet: () => Promise<Wallet | null>;
   getWalletLedger: () => Promise<WalletLedgerEntry[]>;
   requestDedicatedAccount: () => Promise<Wallet | null>;
+  startWalletTopup: (amountKobo: number) => Promise<{ authorizationUrl: string; accessCode?: string; reference: string }>;
+  quoteWalletTopup: (amountKobo: number) => Promise<{ amountKobo: number; feeKobo: number; chargeKobo: number } | null>;
   registerDeviceToken: (options?: { silent?: boolean }) => Promise<boolean>;
   unregisterDeviceToken: () => Promise<boolean>;
   payOrder: (orderId: string) => Promise<{ authorizationUrl: string; accessCode?: string }>;
@@ -1703,10 +1705,15 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Authoritative server-side quote (does NOT mutate cart/orders).
   // Pass a promotionCode so the backend applies + returns discountKobo.
-  const fetchOrderQuote = async (promotionCode?: string): Promise<ServerQuote | null> => {
+  // Pass paymentMethod: wallet orders carry no large-order surcharge, so the quote differs.
+  const fetchOrderQuote = async (promotionCode?: string, paymentMethod?: PaymentMethod): Promise<ServerQuote | null> => {
     if (!cart || !user) return null;
     try {
-      const q = await apiRequest('/orders/quote', 'POST', buildOrderPayload(undefined, promotionCode));
+      const q = await apiRequest(
+        '/orders/quote',
+        'POST',
+        buildOrderPayload(undefined, promotionCode, undefined, undefined, paymentMethod ? { paymentMethod } : undefined)
+      );
       return q as ServerQuote;
     } catch (e) {
       console.warn('Server quote unavailable, using local estimate:', e);
@@ -1838,6 +1845,31 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const requestDedicatedAccount = async (): Promise<Wallet | null> => {
     await apiRequest('/wallet/dedicated-account', 'POST');
     return getWallet();
+  };
+
+  // Fee breakdown for a top-up: the customer pays Paystack's fee on top so the
+  // wallet receives the full amount. Non-fatal — null hides the breakdown.
+  const quoteWalletTopup = async (
+    amountKobo: number
+  ): Promise<{ amountKobo: number; feeKobo: number; chargeKobo: number } | null> => {
+    try {
+      return await apiRequest(`/wallet/topup/quote?amountKobo=${amountKobo}`, 'GET');
+    } catch (e) {
+      console.warn('quoteWalletTopup failed:', e);
+      return null;
+    }
+  };
+
+  // Start a Paystack checkout that funds the wallet (card, bank transfer, USSD).
+  // Works even while dedicated accounts are off. The balance is credited by the
+  // backend webhook, so callers refresh the wallet after the popup succeeds.
+  const startWalletTopup = async (
+    amountKobo: number
+  ): Promise<{ authorizationUrl: string; accessCode?: string; reference: string }> => {
+    const res = await apiRequest('/wallet/topup', 'POST', { amountKobo });
+    const authorizationUrl = res?.authorizationUrl || res?.authorization_url;
+    if (!authorizationUrl) throw new Error('Could not start the top-up. Please try again.');
+    return { authorizationUrl, accessCode: res?.accessCode || res?.access_code, reference: res?.reference };
   };
 
   // Initialize Paystack. Returns the inline-popup accessCode plus the hosted
@@ -2261,6 +2293,8 @@ export const MealDirectProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         getWallet,
         getWalletLedger,
         requestDedicatedAccount,
+        startWalletTopup,
+        quoteWalletTopup,
         registerDeviceToken,
         unregisterDeviceToken,
         payOrder,

@@ -86,12 +86,12 @@ export const CartView: React.FC = () => {
     if (!cart || !isOnline) return;
     let cancelled = false;
     setIsQuoteLoading(true);
-    fetchOrderQuote(appliedPromo || undefined)
+    fetchOrderQuote(appliedPromo || undefined, paymentMethod)
       .then(q => { if (!cancelled) setServerQuote(q); })
       .finally(() => { if (!cancelled) setIsQuoteLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart?.vendorId, cart?.deliveryLocationId, cart?.deliverySlotId, cart?.deliveryDate, JSON.stringify(cart?.items), isOnline, appliedPromo]);
+  }, [cart?.vendorId, cart?.deliveryLocationId, cart?.deliverySlotId, cart?.deliveryDate, JSON.stringify(cart?.items), isOnline, appliedPromo, paymentMethod]);
 
   if (!cart || cart.items.length === 0) {
     return (
@@ -726,6 +726,11 @@ export const CartView: React.FC = () => {
                   <span className="block text-[10px] font-semibold text-white/50">via Paystack</span>
                 </button>
               </div>
+              {paymentMethod === 'paystack' && exceedsStandardCap && wallet && !walletFrozen && (
+                <p className="mt-2 text-[10px] font-semibold text-mango-warm">
+                  Pay from your wallet to skip the {formatNGN(largeOrderSurchargeKobo)} large-order fee.
+                </p>
+              )}
               {paymentMethod === 'wallet' && walletFrozen && (
                 <p className="mt-2 text-[10px] font-semibold text-red-200">Your wallet is frozen. Choose card, or contact support.</p>
               )}
