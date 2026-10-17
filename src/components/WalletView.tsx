@@ -5,12 +5,10 @@ import { LoadingSkeleton } from './LoadingSkeleton';
 import { PullToRefresh } from './PullToRefresh';
 import { ArrowLeft, Copy, Check, Wallet as WalletIcon, Building2, ArrowDownLeft, ArrowUpRight, CreditCard } from 'lucide-react';
 import { formatNGN } from '../utils/helpers';
-import { launchPaystackCheckout } from '../utils/paystackPopup';
 import type { Wallet, WalletLedgerEntry } from '../types';
 
 export const WalletView: React.FC = () => {
-  const { getWallet, getWalletLedger, requestDedicatedAccount, startWalletTopup, quoteWalletTopup, navigateTo } =
-    useMealDirect();
+  const { getWallet, getWalletLedger, requestDedicatedAccount, navigateTo } = useMealDirect();
 
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
@@ -20,10 +18,7 @@ export const WalletView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [topupNaira, setTopupNaira] = useState('');
-  const [toppingUp, setToppingUp] = useState(false);
-  const [topupQuote, setTopupQuote] = useState<{ amountKobo: number; feeKobo: number; chargeKobo: number } | null>(
-    null
-  );
+  const [waitingForTransfer, setWaitingForTransfer] = useState(false);
   // Set once the backend says dedicated accounts are switched off, so we stop
   // offering a button that cannot succeed and point at card top-up instead.
   const [dvaUnavailable, setDvaUnavailable] = useState(false);
@@ -40,26 +35,6 @@ export const WalletView: React.FC = () => {
     load();
   }, [load]);
 
-  // Show what the customer will actually pay (amount + Paystack fee) as they type.
-  useEffect(() => {
-    const amountKobo = Math.round(Number(topupNaira) * 100);
-    if (!Number.isFinite(amountKobo) || amountKobo < 100) {
-      setTopupQuote(null);
-      return;
-    }
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      quoteWalletTopup(amountKobo).then(q => {
-        if (!cancelled) setTopupQuote(q && q.amountKobo === amountKobo ? q : null);
-      });
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topupNaira]);
-
   const handleProvision = async () => {
     setProvisioning(true);
     setError(null);
@@ -70,7 +45,7 @@ export const WalletView: React.FC = () => {
       const message: string = e?.message || 'Could not set up your top-up account. Please try again.';
       if (/not available yet/i.test(message)) {
         setDvaUnavailable(true);
-        setNotice('Bank account numbers are coming soon. Top up with card or bank transfer below.');
+        setNotice('Bank account numbers are coming soon. Please check back shortly.');
       } else {
         setError(message);
         // Pick up the recorded failure so the panel shows the retry state, not stale data.
@@ -82,52 +57,29 @@ export const WalletView: React.FC = () => {
     }
   };
 
-  // The webhook credits the wallet a moment after Paystack confirms, so poll a
-  // few times until the balance moves rather than asking the user to refresh.
-  const refreshUntilCredited = async (previousBalance: number) => {
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 2500));
-      const w = await getWallet();
-      if (w && w.balanceKobo > previousBalance) {
-        setWallet(w);
-        setLedger(await getWalletLedger());
-        setNotice(`Wallet topped up. New balance: ${formatNGN(w.balanceKobo)}.`);
-        return;
-      }
-    }
-    setNotice('Payment received. Your balance will update shortly — pull down to refresh.');
-  };
-
-  const handleTopup = async () => {
+  // The webhook credits the wallet once the bank transfer lands, so poll a few
+  // times until the balance moves rather than asking the user to refresh.
+  const handleSentTransfer = async () => {
     if (!wallet) return;
-    const amountKobo = Math.round(Number(topupNaira) * 100);
-    if (!Number.isFinite(amountKobo) || amountKobo <= 0) {
-      setError('Enter how much you want to add.');
-      return;
-    }
-    if (wallet.minTopupKobo > 0 && amountKobo < wallet.minTopupKobo) {
-      setError(`The minimum top-up is ${formatNGN(wallet.minTopupKobo)}.`);
-      return;
-    }
-    setToppingUp(true);
-    setError(null);
-    setNotice(null);
     const previousBalance = wallet.balanceKobo;
+    setWaitingForTransfer(true);
+    setError(null);
+    setNotice('Waiting for your transfer to land…');
     try {
-      const launch = await startWalletTopup(amountKobo);
-      await launchPaystackCheckout(launch, {
-        onSuccess: () => {
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        const w = await getWallet();
+        if (w && w.balanceKobo > previousBalance) {
+          setWallet(w);
+          setLedger(await getWalletLedger());
           setTopupNaira('');
-          setNotice('Payment successful — crediting your wallet…');
-          void refreshUntilCredited(previousBalance);
-        },
-        onCancel: () => setNotice('Top-up cancelled.'),
-        onError: () => setError('Payment could not be completed. Please try again.')
-      });
-    } catch (e: any) {
-      setError(e?.message || 'Could not start the top-up. Please try again.');
+          setNotice(`Wallet topped up. New balance: ${formatNGN(w.balanceKobo)}.`);
+          return;
+        }
+      }
+      setNotice('Transfer not seen yet. Bank transfers can take a few minutes — pull down to refresh.');
     } finally {
-      setToppingUp(false);
+      setWaitingForTransfer(false);
     }
   };
 
@@ -154,6 +106,9 @@ export const WalletView: React.FC = () => {
     const fee = Math.round((kobo * (wallet?.dedicatedAccountFeeBps ?? 0)) / 10_000);
     return dvaFeeCapKobo > 0 ? Math.min(fee, dvaFeeCapKobo) : fee;
   };
+  const fundKobo = Math.round(Number(topupNaira) * 100);
+  const fundValid = Number.isFinite(fundKobo) && fundKobo > 0;
+  const fundBelowMin = fundValid && (wallet?.minTopupKobo ?? 0) > 0 && fundKobo < (wallet?.minTopupKobo ?? 0);
 
   return (
     <AppShell activeTab="wallet">
@@ -197,13 +152,13 @@ export const WalletView: React.FC = () => {
                 </div>
               )}
 
-              {/* Top up with card / bank transfer via Paystack checkout */}
+              {/* Add money: always by bank transfer to the customer's dedicated account */}
               <GlassPanel className="p-6">
                 <h3 className="font-display font-bold text-sm text-emerald-strong mb-1 flex items-center gap-1.5">
                   <CreditCard className="w-4.5 h-4.5 text-emerald-deep" /> Add money
                 </h3>
                 <p className="text-[11px] text-muted-grey mb-4 leading-relaxed">
-                  Pay with card, bank transfer or USSD. Your wallet is credited as soon as payment is confirmed.
+                  Enter an amount, then transfer it from any bank app to your personal account number.
                 </p>
                 <div className="flex flex-wrap gap-2 mb-3">
                   {[1000, 2000, 5000, 10000].map(naira => (
@@ -221,33 +176,65 @@ export const WalletView: React.FC = () => {
                     </button>
                   ))}
                 </div>
-                <div className="flex gap-2">
-                  <div className="flex-1 flex items-center rounded-xl border border-emerald-deep/15 bg-white px-3">
-                    <span className="text-xs font-bold text-muted-grey mr-1">₦</span>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      placeholder="Amount"
-                      value={topupNaira}
-                      onChange={e => setTopupNaira(e.target.value)}
-                      className="w-full py-2.5 text-sm font-bold text-emerald-strong bg-transparent outline-none"
-                    />
-                  </div>
-                  <button
-                    onClick={handleTopup}
-                    disabled={toppingUp || frozen || !topupNaira}
-                    className="px-4 py-2.5 bg-emerald-deep hover:bg-emerald-strong disabled:opacity-60 text-white font-bold text-xs rounded-xl cursor-pointer transition active:scale-95"
-                  >
-                    {toppingUp ? 'Starting…' : 'Top up'}
-                  </button>
+                <div className="flex items-center rounded-xl border border-emerald-deep/15 bg-white px-3">
+                  <span className="text-xs font-bold text-muted-grey mr-1">₦</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    placeholder="Amount"
+                    value={topupNaira}
+                    onChange={e => setTopupNaira(e.target.value)}
+                    className="w-full py-2.5 text-sm font-bold text-emerald-strong bg-transparent outline-none"
+                  />
                 </div>
-                {topupQuote && topupQuote.feeKobo > 0 && (
-                  <p className="mt-2 text-[11px] text-emerald-strong">
-                    You pay <span className="font-bold">{formatNGN(topupQuote.chargeKobo)}</span> — includes{' '}
-                    {formatNGN(topupQuote.feeKobo)} Paystack fee. Your wallet gets{' '}
-                    <span className="font-bold">{formatNGN(topupQuote.amountKobo)}</span>.
-                  </p>
+                {fundBelowMin && (
+                  <p className="mt-2 text-[11px] text-red-700">The minimum top-up is {formatNGN(wallet.minTopupKobo)}.</p>
+                )}
+                {fundValid && !fundBelowMin && !frozen && (
+                  <div className="mt-3 rounded-xl border border-emerald-deep/12 bg-emerald-deep/5 p-4 text-[11px] text-emerald-strong space-y-3">
+                    {dva ? (
+                      <>
+                        <p className="leading-relaxed">
+                          Transfer <span className="font-bold">{formatNGN(fundKobo)}</span> to{' '}
+                          <span className="font-bold">{dva.accountNumber}</span> ({dva.bankName}). Your wallet gets{' '}
+                          <span className="font-bold">{formatNGN(fundKobo - dvaFeeFor(fundKobo))}</span>
+                          {dvaFeePercent > 0 ? ` after the ${formatNGN(dvaFeeFor(fundKobo))} fee (${dvaFeeLabel}).` : '.'}
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleCopy(dva.accountNumber)}
+                            className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-emerald-deep/20 font-bold cursor-pointer hover:bg-emerald-deep/5"
+                          >
+                            {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            {copied ? 'Copied' : 'Copy account number'}
+                          </button>
+                          <button
+                            onClick={handleSentTransfer}
+                            disabled={waitingForTransfer}
+                            className="px-3 py-2 bg-emerald-deep hover:bg-emerald-strong disabled:opacity-60 text-white font-bold rounded-xl cursor-pointer transition active:scale-95"
+                          >
+                            {waitingForTransfer ? 'Checking…' : "I've sent it"}
+                          </button>
+                        </div>
+                      </>
+                    ) : dvaUnavailable ? (
+                      <p className="leading-relaxed">Bank account numbers are coming soon. Please check back shortly.</p>
+                    ) : (
+                      <>
+                        <p className="leading-relaxed">
+                          Set up your personal account number first, then transfer {formatNGN(fundKobo)} to it.
+                        </p>
+                        <button
+                          onClick={handleProvision}
+                          disabled={provisioning}
+                          className="px-3 py-2 bg-emerald-deep hover:bg-emerald-strong disabled:opacity-60 text-white font-bold rounded-xl cursor-pointer transition active:scale-95"
+                        >
+                          {provisioning ? 'Setting up…' : 'Get my account number'}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 )}
                 {wallet.minTopupKobo > 0 && (
                   <p className="mt-2 text-[10px] text-muted-grey">Minimum top-up: {formatNGN(wallet.minTopupKobo)}.</p>
@@ -296,12 +283,12 @@ export const WalletView: React.FC = () => {
                   </>
                 ) : dvaUnavailable ? (
                   <p className="text-[11px] text-muted-grey leading-relaxed">
-                    A personal account number for transfers is coming soon. Use “Add money” above in the meantime.
+                    A personal account number for transfers is coming soon. Please check back shortly.
                   </p>
                 ) : dvaFailed ? (
                   <>
                     <p className="text-[11px] text-muted-grey mb-2 leading-relaxed">
-                      We couldn't create your account number yet. Use “Add money” above in the meantime, or try again.
+                      We couldn't create your account number yet. Please try again.
                     </p>
                     {wallet.dedicatedAccountError && (
                       <p className="mb-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[10px] text-red-700">
